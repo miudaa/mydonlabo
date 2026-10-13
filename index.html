@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>マイドン置き場</title>
+<link rel="icon" href="favicon.png">
+<link rel="apple-touch-icon" href="icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
@@ -30,7 +32,7 @@ a{color:inherit}
 header{background:var(--paper);border-bottom:1px solid var(--line);position:sticky;top:env(safe-area-inset-top,0px);z-index:10}
 .hd{max-width:1100px;margin:0 auto;padding:12px 16px;display:flex;align-items:center;gap:12px}
 .logo{font-size:1.15rem;font-weight:700;text-decoration:none;display:flex;align-items:center;gap:8px;letter-spacing:.02em}
-.logo i{width:12px;height:12px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px var(--tint)}
+.logo img{width:32px;height:32px;display:block}
 .post{margin-left:auto;flex:none;white-space:nowrap;font-size:.85rem;font-weight:500;text-decoration:none;border:1px solid var(--line);border-radius:999px;padding:6px 14px;color:var(--muted)}
 .post:hover,.post:focus-visible{color:var(--ink);border-color:var(--muted)}
 main{max-width:1100px;margin:0 auto;padding-block:16px 40px;padding-inline:16px}
@@ -95,7 +97,7 @@ input,select{font:inherit;font-size:.9rem;color:var(--ink);background:var(--pape
 <body>
 <header>
   <div class="hd">
-    <a class="logo" href="#"><i></i>マイドン置き場</a>
+    <a class="logo" href="#"><img src="logo64.png" alt="">マイドン置き場</a>
     <a class="post" id="postLink" href="https://github.com" target="_blank" rel="noopener" title="管理者用：GitHub でリリースを作成">＋ 投稿</a>
   </div>
 </header>
