@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>マイドンラボ</title>
+<script>try{var t=localStorage.getItem("mydon-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}</script>
 <link rel="icon" href="favicon.png">
 <link rel="apple-touch-icon" href="icon.png">
 <style>
@@ -27,6 +28,7 @@ a{color:inherit}
 .brand b{white-space:nowrap;font-size:14px}
 .brand small{display:block;color:var(--muted);font-size:11px}
 .logo{width:32px;height:32px;display:block;flex:none}
+.top-actions{display:flex;align-items:center;gap:8px;flex:none}
 .btn{background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 10px;cursor:pointer;font:inherit;text-decoration:none;display:inline-block;white-space:nowrap}
 .btn:hover{border-color:var(--muted)}
 .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
@@ -92,7 +94,8 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
 <body>
 <header class="topbar">
   <a class="brand" href="#"><img class="logo" src="logo64.png" alt=""><div><b>マイドンラボ</b></div></a>
-  <a class="btn" id="postLink" hidden href="https://github.com" target="_blank" rel="noopener" title="管理者用：GitHub でリリースを作成">＋ 投稿</a>
+  <div class="top-actions"><button class="btn" id="themeBtn" type="button" aria-label="表示モードを切り替え"></button>
+  <a class="btn" id="postLink" hidden href="https://github.com" target="_blank" rel="noopener" title="管理者用：GitHub でリリースを作成">＋ 投稿</a></div>
 </header>
 <div class="tabsbar"><nav class="tabs" id="tabs" aria-label="カテゴリ"></nav></div>
 <main>
@@ -299,6 +302,16 @@ $('#grid').addEventListener('click', e => {
 $('#grid').addEventListener('keydown', e => { const c = e.target.closest('.card'); if (c && e.target === c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openDetail(c.dataset.id); } });
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 $('#mclose').addEventListener('click', closeModal);
+const THEMES = [['auto', '自動'], ['light', 'ライト'], ['dark', 'ダーク']];
+let theme = 'auto';
+try { const t = localStorage.getItem('mydon-theme'); if (t === 'light' || t === 'dark') theme = t; } catch {}
+function applyTheme(){
+  if (theme === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = theme;
+  $('#themeBtn').textContent = (theme === 'dark' ? '☾ ' : theme === 'light' ? '☀ ' : '◐ ') + THEMES.find(t => t[0] === theme)[1];
+  try { theme === 'auto' ? localStorage.removeItem('mydon-theme') : localStorage.setItem('mydon-theme', theme); } catch {}
+}
+$('#themeBtn').addEventListener('click', () => { const i = THEMES.findIndex(t => t[0] === theme); theme = THEMES[(i + 1) % THEMES.length][0]; applyTheme(); });
+applyTheme();
 const syncAdmin = () => { $('#postLink').hidden = location.hash !== '#admin'; };
 window.addEventListener('hashchange', syncAdmin);
 syncAdmin();
