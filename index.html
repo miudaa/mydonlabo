@@ -59,9 +59,11 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
 .advbtn .car{font-size:10px;transition:transform .15s}
 .advbtn[aria-expanded="true"] .car{transform:rotate(180deg)}
 .adv{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:-4px 0 12px;display:grid;gap:10px}
-.arow{display:grid;grid-template-columns:5.5em 1fr;gap:8px;align-items:center;min-width:0}
+.arow{display:grid;grid-template-columns:7em 1fr;gap:8px;align-items:center;min-width:0}
 .arow.end{grid-template-columns:1fr;justify-items:end}
 .alabel{font-size:12px;color:var(--muted)}
+.drange{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0}
+.drange input{background:var(--panel);min-width:0}
 .arow select{justify-self:start;min-width:10em;background:var(--panel)}
 .seg{display:inline-flex;flex-wrap:wrap;justify-self:start;border:1px solid var(--line);border-radius:999px;overflow:hidden}
 .seg button{background:transparent;border:0;color:inherit;font:inherit;font-size:12px;padding:4px 12px;cursor:pointer}
@@ -141,6 +143,8 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
     <div class="arow" id="tagRow" hidden><span class="alabel">タグ</span><div class="chips" id="tagChips"></div></div>
     <div class="arow"><span class="alabel">ソート順</span><select id="sort" aria-label="ソート順"><option value="new">新しい順</option><option value="old">古い順</option><option value="name">名前（昇順）</option><option value="name-desc">名前（降順）</option></select></div>
     <div class="arow"><span class="alabel">fps</span><select id="fps" aria-label="fps"></select></div>
+    <div class="arow"><span class="alabel">日付</span><div class="drange"><input type="date" id="dFrom" aria-label="この日から"><span>〜</span><input type="date" id="dTo" aria-label="この日まで"></div></div>
+    <div class="arow"><span class="alabel">シミュレーター</span><select id="sim" aria-label="シミュレーター"></select></div>
     <div class="arow"><span class="alabel">カラー</span><div class="seg" id="colorSeg"><button type="button" data-color="">すべて</button><button type="button" data-color="default">default</button><button type="button" data-color="other">その他</button></div></div>
     <div class="arow end"><button class="btn" id="advReset" type="button">条件をリセット</button></div>
   </div>
@@ -165,7 +169,9 @@ const fmtDate = s => { const d = new Date(s); return `${d.getFullYear()}/${d.get
 const IMG_RE = /\.(png|jpe?g|gif|webp|avif)$/i;
 const DEMO = !GITHUB_OWNER || !GITHUB_REPO;
 
-const S = { posts: [], cats: [], cat: 'all', q: '', sort: 'new', bms: new Set(), bmOnly: false, mode: 'all', tags: new Set(), fps: '', color: '' };
+const S = { posts: [], cats: [], cat: 'all', q: '', sort: 'new', bms: new Set(), bmOnly: false, mode: 'all', tags: new Set(), fps: '', color: '', sim: '', dFrom: '', dTo: '' };
+const SIM_LIST = ['taikonauts', 'TJAPlayer3', 'OpenTaiko'];
+const SIM_DEFAULT = 'taikonauts';
 const FPS_LIST = ['240', '120', '60', '30', '20', '15', '10'];
 
 // ----- ブクマ（このブラウザに保存） -----
@@ -174,9 +180,9 @@ try { S.bms = new Set(JSON.parse(localStorage.getItem(BM_KEY) || '[]')); } catch
 function saveBms(){ try { localStorage.setItem(BM_KEY, JSON.stringify([...S.bms])); } catch {} }
 
 // ----- リリース本文の「カテゴリ: / タグ: / fps: / カラー:」を読む -----
-const META = { cat: /^(?:カテゴリ|category)$/i, tags: /^(?:タグ|tags?)$/i, fps: /^fps$/i, color: /^(?:カラー|色|colou?r)$/i };
+const META = { sim: /^(?:シミュレーター|シミュレータ|simulator|sim)$/i, cat: /^(?:カテゴリ|category)$/i, tags: /^(?:タグ|tags?)$/i, fps: /^fps$/i, color: /^(?:カラー|色|colou?r)$/i };
 function parseBody(body){
-  const meta = { cat: null, tags: [], fps: null, color: null }; const rest = [];
+  const meta = { cat: null, tags: [], fps: null, color: null, sim: null }; const rest = [];
   for (const line of String(body || '').split(/\r?\n/)) {
     const m = line.match(/^\s*([^:：;；\s]+)\s*[:：;；]\s*(.*?)\s*$/);
     const key = m && Object.keys(META).find(k => META[k].test(m[1]));
@@ -186,8 +192,10 @@ function parseBody(body){
     else if (v && meta[key] == null) meta[key] = key === 'fps' ? ((v.match(/\d+/) || [null])[0]) : v;
   }
   meta.tags = [...new Set(meta.tags)];
+  if (!meta.sim) meta.sim = SIM_DEFAULT;
   return { ...meta, desc: rest.join('\n').trim() };
 }
+const localDay = s => { const d = new Date(s), z = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`; };
 const isDefaultColor = p => !p.color || /^(?:default|デフォルト|標準)$/i.test(p.color);
 
 function fromRelease(r){
@@ -242,7 +250,7 @@ function demoPosts(){
   ];
   const extra = [[['夏', '和風'], '60', 'default'], [['ゆるい'], '30', '青'], [['段位', '記念'], '120', 'default'], [['和風', '音楽'], '60', '紫'], [['冬'], '60', 'default'], [['和風', '食べ物'], '240', '桃'], [[], '30', 'default']];
   return rows.map(([title, cat, hue, n, desc, files, ago], i) => ({
-    id: 'demo' + i, title, cat, desc, tags: extra[i][0], fps: extra[i][1], color: extra[i][2], date: new Date(now - ago * day).toISOString(), page: 'https://github.com',
+    id: 'demo' + i, title, cat, desc, tags: extra[i][0], fps: extra[i][1], color: extra[i][2], sim: i === 3 ? 'TJAPlayer3' : SIM_DEFAULT, date: new Date(now - ago * day).toISOString(), page: 'https://github.com',
     images: Array.from({ length: n }, (_, k) => sampleImg(hue, title.slice(0, 8), k)),
     files: files.map(([name, size]) => ({ name, size, url: 'https://github.com' }))
   }));
@@ -267,7 +275,7 @@ function renderTabs(){
 function haystack(p){
   if (S.mode === 'kw') return p.title + ' ' + p.desc;
   if (S.mode === 'tag') return p.tags.join(' ');
-  return [p.title, p.desc, p.cat, ...p.tags, ...p.files.map(f => f.name), p.fps ? p.fps + 'fps' : '', p.color].join(' ');
+  return [p.title, p.desc, p.cat, ...p.tags, ...p.files.map(f => f.name), p.fps ? p.fps + 'fps' : '', p.color, p.sim].join(' ');
 }
 function visible(){
   let list = S.posts;
@@ -275,6 +283,9 @@ function visible(){
   if (S.cat === 'none') list = list.filter(p => !p.cat);
   else if (S.cat !== 'all') list = list.filter(p => p.cat === S.cat);
   if (S.fps) list = list.filter(p => p.fps === S.fps);
+  if (S.sim) list = list.filter(p => p.sim.toLowerCase() === S.sim.toLowerCase());
+  if (S.dFrom) list = list.filter(p => localDay(p.date) >= S.dFrom);
+  if (S.dTo) list = list.filter(p => localDay(p.date) <= S.dTo);
   if (S.color === 'default') list = list.filter(isDefaultColor);
   if (S.color === 'other') list = list.filter(p => !isDefaultColor(p));
   if (S.mode === 'tag' && S.tags.size) list = list.filter(p => [...S.tags].every(t => p.tags.includes(t)));
@@ -300,9 +311,15 @@ function renderAdv(){
   for (const p of S.posts) if (p.fps) fpsCount[p.fps] = (fpsCount[p.fps] || 0) + 1;
   const fpsVals = [...new Set([...FPS_LIST, ...Object.keys(fpsCount)])].sort((a, b) => b - a);
   $('#fps').innerHTML = '<option value="">すべて</option>' + fpsVals.map(v => `<option value="${esc(v)}">${esc(v)}fps（${fpsCount[v] || 0}）</option>`).join('');
+  const simCount = {}, simName = {};
+  for (const p of S.posts) { const k = p.sim.toLowerCase(); simCount[k] = (simCount[k] || 0) + 1; simName[k] = simName[k] || p.sim; }
+  for (const n of SIM_LIST) simName[n.toLowerCase()] = simName[n.toLowerCase()] || n;
+  const simKeys = [...new Set([...SIM_LIST.map(n => n.toLowerCase()), ...Object.keys(simCount)])];
+  $('#sim').innerHTML = '<option value="">すべて</option>' + simKeys.map(k => `<option value="${esc(simName[k])}">${esc(simName[k])}（${simCount[k] || 0}）</option>`).join('');
+  $('#sim').value = S.sim; $('#dFrom').value = S.dFrom; $('#dTo').value = S.dTo;
   $('#fps').value = S.fps; $('#sort').value = S.sort;
   $('#q').placeholder = S.mode === 'kw' ? 'タイトル・説明で検索' : S.mode === 'tag' ? 'タグ名で検索' : '全体から検索';
-  const n = (S.mode !== 'all') + (S.sort !== 'new') + !!S.fps + !!S.color + (S.mode === 'tag' ? S.tags.size : 0);
+  const n = (S.mode !== 'all') + (S.sort !== 'new') + !!S.fps + !!S.color + !!S.sim + !!S.dFrom + !!S.dTo + (S.mode === 'tag' ? S.tags.size : 0);
   $('#advN').hidden = !n; $('#advN').textContent = n;
   const bm = $('#bmBtn'); bm.setAttribute('aria-pressed', S.bmOnly); $('#bmCount').textContent = S.posts.filter(p => S.bms.has(p.id)).length;
 }
@@ -338,7 +355,7 @@ function openDetail(id){
       ${p.images.length > 1 ? '<button class="nav l" id="gl" aria-label="前の画像">‹</button><button class="nav r" id="gr" aria-label="次の画像">›</button>' : ''}</div>
     ${p.images.length > 1 ? `<div class="thumbs">${p.images.map((u, k) => `<button data-k="${k}" aria-current="${k === 0}"><img src="${esc(u)}" alt=""></button>`).join('')}</div>` : ''}
     <h2>${esc(p.title)}</h2>
-    <div class="dmeta">${p.cat ? `<span class="chip">${esc(p.cat)}</span>` : ''}${p.tags.map(t => `<span class="chip">#${esc(t)}</span>`).join('')}${p.fps ? `<span>${esc(p.fps)}fps</span>` : ''}${p.color ? `<span>カラー: ${esc(p.color)}</span>` : ''}<span>${fmtDate(p.date)}</span></div>
+    <div class="dmeta">${p.cat ? `<span class="chip">${esc(p.cat)}</span>` : ''}${p.tags.map(t => `<span class="chip">#${esc(t)}</span>`).join('')}${p.fps ? `<span>${esc(p.fps)}fps</span>` : ''}${p.color ? `<span>カラー: ${esc(p.color)}</span>` : ''}<span>${esc(p.sim)}</span><span>${fmtDate(p.date)}</span></div>
     ${p.desc ? `<p class="desc">${esc(p.desc)}</p>` : ''}
     <div class="dl">${p.files.map(f => `<div class="frow"><a class="file" href="${esc(f.url)}" target="_blank" rel="noopener"><span>⬇ ${esc(f.name)}</span><small>${fmtSize(f.size)}</small></a><button class="copy" data-copy="${esc(f.url)}" aria-label="${esc(f.name)} のURLをコピー">コピー</button></div>`).join('') || '<p class="count">ダウンロードできるファイルはありません</p>'}</div>
     <button class="btn primary wide" data-dbm="${esc(p.id)}"></button>
@@ -374,11 +391,14 @@ $('#tabs').addEventListener('click', e => { const b = e.target.closest('.tab'); 
 $('#q').addEventListener('input', e => { S.q = e.target.value; renderGrid(); });
 $('#sort').addEventListener('change', e => { S.sort = e.target.value; renderAdv(); renderGrid(); });
 $('#fps').addEventListener('change', e => { S.fps = e.target.value; renderAdv(); renderGrid(); });
+$('#sim').addEventListener('change', e => { S.sim = e.target.value; renderAdv(); renderGrid(); });
+$('#dFrom').addEventListener('change', e => { S.dFrom = e.target.value; renderAdv(); renderGrid(); });
+$('#dTo').addEventListener('change', e => { S.dTo = e.target.value; renderAdv(); renderGrid(); });
 $('#modeSeg').addEventListener('click', e => { const b = e.target.closest('[data-mode]'); if (!b) return; S.mode = b.dataset.mode; renderAdv(); renderGrid(); });
 $('#colorSeg').addEventListener('click', e => { const b = e.target.closest('[data-color]'); if (!b) return; S.color = b.dataset.color; renderAdv(); renderGrid(); });
 $('#tagChips').addEventListener('click', e => { const b = e.target.closest('[data-tag]'); if (!b) return; const t = b.dataset.tag; S.tags.has(t) ? S.tags.delete(t) : S.tags.add(t); renderAdv(); renderGrid(); });
 $('#advBtn').addEventListener('click', () => { const open = $('#adv').hidden; $('#adv').hidden = !open; $('#advBtn').setAttribute('aria-expanded', open); });
-$('#advReset').addEventListener('click', () => { Object.assign(S, { mode: 'all', sort: 'new', fps: '', color: '' }); S.tags.clear(); renderAdv(); renderGrid(); });
+$('#advReset').addEventListener('click', () => { Object.assign(S, { mode: 'all', sort: 'new', fps: '', color: '', sim: '', dFrom: '', dTo: '' }); S.tags.clear(); renderAdv(); renderGrid(); });
 $('#bmBtn').addEventListener('click', () => { S.bmOnly = !S.bmOnly; renderAdv(); renderGrid(); });
 $('#grid').addEventListener('click', e => {
   const bm = e.target.closest('[data-bm]'); if (bm) { e.stopPropagation(); toggleBm(bm.dataset.bm); return; }
@@ -421,7 +441,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal
     const postUrl = () => {
       const d = new Date(), z = n => String(n).padStart(2, '0');
       const tag = `post-${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`;
-      const q = new URLSearchParams({ tag, body: 'カテゴリ: \nタグ: \nfps: 60\nカラー: default\n' });
+      const q = new URLSearchParams({ tag, body: 'カテゴリ: \nタグ: \nfps: 60\nカラー: default\nシミュレーター: taikonauts\n' });
       return `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/new?${q}`;
     };
     const link = $('#postLink');
