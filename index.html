@@ -243,6 +243,7 @@ function buildItems(post, assets){
   let list = [...groups.values()];
   if (!list.some(g => g.images.length)) list = [{ name: post.title, images: imgs, files: others }];   // 名前がそろっていない時は、リリース全体で1体
   else { list.sort((x, y) => natural(x.name, y.name)); list.forEach(g => { if (!g.images.length) g.images = loose; }); }
+  if (list.length === 1) list[0].name = post.title;   // 1体だけの投稿は、ファイル名ではなくタイトルを名前にする
   return list.map(g => {
     const fpsInName = g.files.map(f => (f.name.match(/(\d+)\s*fps/i) || [])[1]).find(Boolean);
     const shown = g.name.replace(/[_\-\s]*\d+\s*fps$/i, '') || g.name;
