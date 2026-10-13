@@ -30,7 +30,26 @@ a{color:inherit}
 .logo{width:32px;height:32px;display:block;flex:none}
 .top-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex:1 1 280px;min-width:0}
 .sbox{position:relative;flex:1 1 auto;max-width:440px;min-width:0}
-.bag-head{display:flex;justify-content:flex-end;margin:-2px 0 8px}
+.bag-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin:-2px 0 8px;min-width:0}
+.crumb{font-size:12px;color:var(--muted);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.subs{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px;padding-bottom:12px;border-bottom:1px dashed var(--line)}
+.sub-btn{background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:5px 12px;color:var(--ink);cursor:pointer;font:inherit;font-size:12px}
+.sub-btn small{color:var(--muted);margin-left:5px;font-variant-numeric:tabular-nums}
+.sub-btn:hover{border-color:var(--muted)}
+.sub-btn[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.sub-btn[aria-pressed="true"] small{color:inherit;opacity:.8}
+.sub-btn.more{color:var(--muted);border-style:dashed}
+.sec{margin:16px 0 8px;font-size:13px;display:flex;align-items:baseline;gap:8px}
+.sec:first-child{margin-top:0}
+.sec small{color:var(--muted);font-weight:400}
+.sec button{margin-left:auto;background:none;border:0;color:var(--muted);font:inherit;font-size:11px;cursor:pointer}
+.sec button:hover{color:var(--accent)}
+.sibs{display:flex;gap:6px;overflow-x:auto;margin:4px 0 12px}
+.sibs button{flex:none;width:56px;background:var(--bg);border:2px solid transparent;border-radius:8px;padding:2px;cursor:pointer;font:inherit;font-size:10px;color:var(--muted)}
+.sibs button[aria-current="true"]{border-color:var(--accent);color:var(--ink)}
+.sibs img{width:48px;height:48px;object-fit:contain;display:block;border-radius:5px;margin:0 auto 2px}
+.sibs span{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.slabel{font-size:11px;color:var(--muted);margin-top:4px}
 .brand-wrap{display:flex;align-items:center;gap:10px;min-width:0}
 .btn.icon{width:30px;height:30px;padding:0;display:grid;place-items:center;font-size:15px;line-height:1}
 .btn{background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 10px;cursor:pointer;font:inherit;text-decoration:none;display:inline-block;white-space:nowrap}
@@ -147,8 +166,9 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
   <section class="bag">
   <nav class="tabs" id="tabs" aria-label="カテゴリ"></nav>
   <div class="bag-body">
-  <div class="bag-head"><span class="count" id="count"></span></div>
-  <div class="grid" id="grid"><p class="empty">読み込み中…</p></div>
+  <div class="subs" id="subs" hidden></div>
+  <div class="bag-head"><span class="crumb" id="crumb"></span><span class="count" id="count"></span></div>
+  <div id="list"><p class="empty">読み込み中…</p></div>
   </div>
   </section>
 </main>
@@ -169,17 +189,19 @@ const fmtDate = s => { const d = new Date(s); return `${d.getFullYear()}/${d.get
 const IMG_RE = /\.(png|jpe?g|gif|webp|avif)$/i;
 const DEMO = !GITHUB_OWNER || !GITHUB_REPO;
 
-const S = { posts: [], cats: [], cat: 'all', q: '', sort: 'new', bms: new Set(), bmOnly: false, mode: 'all', tags: new Set(), fps: '', color: '', sim: '', dFrom: '', dTo: '' };
+const S = { posts: [], items: [], cats: [], cat: 'all', sub: 'all', subsOpen: false, q: '', sort: 'new', bms: new Set(), bmOnly: false, mode: 'all', tags: new Set(), fps: '', color: '', sim: '', dFrom: '', dTo: '' };
 const SIM_LIST = ['taikonauts', 'TJAPlayer3', 'OpenTaiko'];
 const SIM_DEFAULT = 'taikonauts';
 const FPS_LIST = ['240', '120', '60', '30', '20', '15', '10'];
+const SUB_LIMIT = 8;   // 小分類ボタンをこの数より多く出す時は「＋N」でたたむ
+const natural = (a, b) => a.localeCompare(b, 'ja', { numeric: true, sensitivity: 'base' });
 
-// ----- ブクマ（このブラウザに保存） -----
+// ----- ブクマ（このブラウザに保存・マイドン1体ずつ） -----
 const BM_KEY = 'mydon-bookmarks';
 try { S.bms = new Set(JSON.parse(localStorage.getItem(BM_KEY) || '[]')); } catch {}
 function saveBms(){ try { localStorage.setItem(BM_KEY, JSON.stringify([...S.bms])); } catch {} }
 
-// ----- リリース本文の「カテゴリ: / タグ: / fps: / カラー:」を読む -----
+// ----- リリース本文の「カテゴリ: / タグ: / fps: / カラー: / シミュレーター:」を読む -----
 const META = { sim: /^(?:シミュレーター|シミュレータ|simulator|sim)$/i, cat: /^(?:カテゴリ|category)$/i, tags: /^(?:タグ|tags?)$/i, fps: /^fps$/i, color: /^(?:カラー|色|colou?r)$/i };
 function parseBody(body){
   const meta = { cat: null, tags: [], fps: null, color: null, sim: null }; const rest = [];
@@ -197,17 +219,35 @@ function parseBody(body){
 }
 const localDay = s => { const d = new Date(s), z = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`; };
 const isDefaultColor = p => !p.color || /^(?:default|デフォルト|標準)$/i.test(p.color);
+const stem = n => n.replace(/\.[^.]+$/, '');
+const isImgAsset = a => (a.type || '').startsWith('image/') || IMG_RE.test(a.name);
+
+// 1つのリリース（小分類）の添付を、同じ名前の「画像＋zip」ごとにマイドン1体ずつへ分ける
+function buildItems(post, assets){
+  const imgs = assets.filter(isImgAsset), others = assets.filter(a => !isImgAsset(a));
+  const groups = new Map();
+  for (const f of others) { const k = stem(f.name).toLowerCase(); if (!groups.has(k)) groups.set(k, { name: stem(f.name), images: [], files: [] }); groups.get(k).files.push(f); }
+  const loose = [];
+  for (const im of imgs) {
+    const k = stem(im.name).toLowerCase(), base = k.replace(/[_\-\s]\d+$/, '');
+    const g = groups.get(k) || groups.get(base);
+    g ? g.images.push(im) : loose.push(im);
+  }
+  let list = [...groups.values()];
+  if (!list.some(g => g.images.length)) list = [{ name: post.title, images: imgs, files: others }];   // 名前がそろっていない時は、リリース全体で1体
+  else { list.sort((x, y) => natural(x.name, y.name)); list.forEach(g => { if (!g.images.length) g.images = loose; }); }
+  return list.map(g => {
+    const fpsInName = g.files.map(f => (f.name.match(/(\d+)\s*fps/i) || [])[1]).find(Boolean);
+    const shown = g.name.replace(/[_\-\s]*\d+\s*fps$/i, '') || g.name;
+    return { ...post, id: post.rid + ':' + g.name, name: shown, images: g.images.map(x => x.url), files: g.files, fps: fpsInName || post.fps };
+  });
+}
 
 function fromRelease(r){
   const meta = parseBody(r.body);
-  const assets = r.assets || [];
-  const isImg = a => (a.content_type || '').startsWith('image/') || IMG_RE.test(a.name);
-  return {
-    id: String(r.id), title: r.name || r.tag_name, ...meta,
-    date: r.published_at || r.created_at, page: r.html_url,
-    images: assets.filter(isImg).map(a => a.browser_download_url),
-    files: assets.filter(a => !isImg(a)).map(a => ({ name: a.name, size: a.size, url: a.browser_download_url }))
-  };
+  const post = { rid: String(r.id), rtitle: r.name || r.tag_name, title: r.name || r.tag_name, ...meta, date: r.published_at || r.created_at, page: r.html_url };
+  post.items = buildItems(post, (r.assets || []).map(a => ({ name: a.name, size: a.size, url: a.browser_download_url, type: a.content_type })));
+  return post;
 }
 
 async function loadReleases(){
@@ -239,21 +279,27 @@ function sampleImg(hue, label, k){
 }
 function demoPosts(){
   const day = 86400000, now = Date.now();
+  // [大分類, 小分類, 色相, 何日前, 本文, [マイドン名...]]
   const rows = [
-    ['はっぴ姿の夏祭りセット', 'イベント', 20, 3, '夏祭りイベント用に作ったコーデです。\nはっぴ・うちわ・下駄の3点セット。', [['matsuri_set.zip', 18400000]], 1],
-    ['ゆる部屋着コーデ', '普段着', 200, 2, 'のんびり部屋着。色違いを2つ入れています。', [['heyagi_blue.zip', 9200000], ['heyagi_pink.zip', 9400000]], 3],
-    ['段位道場 八段記念', '段位', 0, 4, '八段合格記念のフルセットです。高画質版なので容量大きめです。', [['8dan_full_hq.zip', 1240000000]], 5],
-    ['和楽器バンド風', 'イベント', 280, 1, '', [['wagakki.zip', 32000000]], 8],
-    ['雪だるまの冬支度', '季節', 190, 2, 'マフラーと手袋つき。', [['winter.zip', 21000000]], 12],
-    ['お団子屋さん', 'イベント', 330, 3, '三色団子モチーフ。看板の小物も入っています。', [['dango_shop.zip', 45000000], ['dango_extra_parts.zip', 6100000]], 20],
-    ['宇宙飛行士', '普段着', 230, 1, '', [['astronaut.zip', 15500000]], 31]
+    ['回転', 'x+y 回転', 20, 1, 'fps: 60\nx+y 軸でくるくる回ります。', ['正面', '斜め', '背面']],
+    ['回転', 'x+y+z 回転', 50, 4, 'fps: 30\n全部の軸で自転します。', ['ゆっくり_30fps', 'はやい_60fps']],
+    ['回転', 'y 回転', 80, 9, '', ['横回転']],
+    ['コラボ', 'ボーカル系', 300, 2, 'タグ: 歌, 音楽\nカラー: 青', ['歌姫A', '歌姫B', '歌姫C']],
+    ['コラボ', 'ゲーム系', 260, 6, 'タグ: ゲーム', ['勇者', '魔法使い']],
+    ['コラボ', 'アニメ系', 330, 12, '', ['ヒーロー', 'マスコット', '悪役', 'ライバル']],
+    ['段位', '十段', 0, 3, 'fps: 120\nタグ: 段位, 記念', ['十段A', '十段B', '十段C']],
+    ['段位', '九段', 15, 15, 'fps: 120', ['九段A', '九段B']],
+    ['イベント', '夏祭り', 40, 5, 'タグ: 夏, 和風', ['はっぴ', '浴衣', '甚平']]
   ];
-  const extra = [[['夏', '和風'], '60', 'default'], [['ゆるい'], '30', '青'], [['段位', '記念'], '120', 'default'], [['和風', '音楽'], '60', '紫'], [['冬'], '60', 'default'], [['和風', '食べ物'], '240', '桃'], [[], '30', 'default']];
-  return rows.map(([title, cat, hue, n, desc, files, ago], i) => ({
-    id: 'demo' + i, title, cat, desc, tags: extra[i][0], fps: extra[i][1], color: extra[i][2], sim: i === 3 ? 'TJAPlayer3' : SIM_DEFAULT, date: new Date(now - ago * day).toISOString(), page: 'https://github.com',
-    images: Array.from({ length: n }, (_, k) => sampleImg(hue, title.slice(0, 8), k)),
-    files: files.map(([name, size]) => ({ name, size, url: 'https://github.com' }))
-  }));
+  return rows.map(([cat, title, hue, ago, body, names], i) => {
+    const r = { id: 'demo' + i, name: title, body: `カテゴリ: ${cat}\n${body}`, published_at: new Date(now - ago * day - i * 60000).toISOString(), html_url: 'https://github.com', assets: [] };
+    names.forEach((n, k) => {
+      r.assets.push({ name: `${n}.png`, size: 0, browser_download_url: sampleImg(hue + k * 25, n.replace(/_\d+fps$/, ''), 0), content_type: 'image/png' });
+      if (k === 0) r.assets.push({ name: `${n}_2.png`, size: 0, browser_download_url: sampleImg(hue + 10, n.replace(/_\d+fps$/, ''), 1), content_type: 'image/png' });
+      r.assets.push({ name: `${n}.zip`, size: 8e6 + k * 3e6 + i * 1e6, browser_download_url: 'https://github.com', content_type: 'application/zip' });
+    });
+    return fromRelease(r);
+  });
 }
 
 // ----- 表示 -----
@@ -262,41 +308,59 @@ function buildCats(){
   for (const p of S.posts) if (p.cat && !seen.includes(p.cat)) seen.push(p.cat);
   const ordered = CATEGORY_ORDER.filter(c => seen.includes(c));
   S.cats = [...ordered, ...seen.filter(c => !ordered.includes(c))];
+  S.items = S.posts.flatMap(p => p.items);
+}
+const inCat = (x, c) => c === 'all' ? true : c === 'none' ? !x.cat : x.cat === c;
+const isSearching = () => !!S.q.trim() || S.bmOnly;
+function postsInCat(){
+  return S.posts.filter(p => inCat(p, S.cat)).sort((a, b) => S.sort === 'old' ? a.date.localeCompare(b.date) : S.sort.startsWith('name') ? natural(a.rtitle, b.rtitle) * (S.sort === 'name-desc' ? -1 : 1) : b.date.localeCompare(a.date));
 }
 
 function renderTabs(){
-  const n = c => c === 'all' ? S.posts.length : c === 'none' ? S.posts.filter(p => !p.cat).length : S.posts.filter(p => p.cat === c).length;
+  const n = c => S.items.filter(x => inCat(x, c)).length;
   const tabs = [['all', 'すべて'], ...S.cats.map(c => [c, c])];
   if (S.posts.some(p => !p.cat)) tabs.push(['none', 'その他']);
   $('#tabs').innerHTML = tabs.map(([id, name]) =>
-    `<button class="tab" data-cat="${esc(id)}" aria-pressed="${S.cat === id}">${esc(name)}<small>${n(id)}</small></button>`).join('');
+    `<button class="tab" data-cat="${esc(id)}" aria-pressed="${S.cat === id && !isSearching()}">${esc(name)}<small>${n(id)}</small></button>`).join('');
 }
 
-function haystack(p){
-  if (S.mode === 'kw') return p.title + ' ' + p.desc;
-  if (S.mode === 'tag') return p.tags.join(' ');
-  return [p.title, p.desc, p.cat, ...p.tags, ...p.files.map(f => f.name), p.fps ? p.fps + 'fps' : '', p.color, p.sim].join(' ');
+// 小分類ボタン：大分類の中に小分類が2つ以上ある時だけ出す（1つなら自動で中身を開く）
+function renderSubs(){
+  const box = $('#subs'), posts = S.cat === 'all' ? [] : postsInCat();
+  if (isSearching() || posts.length < 2) { box.hidden = true; box.innerHTML = ''; return; }
+  const total = posts.reduce((t, p) => t + p.items.length, 0);
+  const shown = S.subsOpen || posts.length <= SUB_LIMIT ? posts : posts.slice(0, SUB_LIMIT);
+  const btn = (id, label, n) => `<button type="button" class="sub-btn" data-sub="${esc(id)}" aria-pressed="${S.sub === id}">${esc(label)}<small>${n}</small></button>`;
+  box.innerHTML = btn('all', 'すべて', total) + shown.map(p => btn(p.rid, p.rtitle, p.items.length)).join('') +
+    (posts.length > SUB_LIMIT ? `<button type="button" class="sub-btn more" data-more>${S.subsOpen ? 'たたむ' : '＋' + (posts.length - SUB_LIMIT)}</button>` : '');
+  box.hidden = false;
 }
-function visible(){
-  let list = S.posts;
-  if (S.bmOnly) list = list.filter(p => S.bms.has(p.id));
-  if (S.cat === 'none') list = list.filter(p => !p.cat);
-  else if (S.cat !== 'all') list = list.filter(p => p.cat === S.cat);
-  if (S.fps) list = list.filter(p => p.fps === S.fps);
-  if (S.sim) list = list.filter(p => p.sim.toLowerCase() === S.sim.toLowerCase());
-  if (S.dFrom) list = list.filter(p => localDay(p.date) >= S.dFrom);
-  if (S.dTo) list = list.filter(p => localDay(p.date) <= S.dTo);
-  if (S.color === 'default') list = list.filter(isDefaultColor);
-  if (S.color === 'other') list = list.filter(p => !isDefaultColor(p));
-  if (S.mode === 'tag' && S.tags.size) list = list.filter(p => [...S.tags].every(t => p.tags.includes(t)));
+
+function haystack(x){
+  if (S.mode === 'kw') return [x.name, x.rtitle, x.desc].join(' ');
+  if (S.mode === 'tag') return x.tags.join(' ');
+  return [x.name, x.rtitle, x.desc, x.cat, ...x.tags, ...x.files.map(f => f.name), x.fps ? x.fps + 'fps' : '', x.color, x.sim].join(' ');
+}
+function passes(x){
+  if (S.bmOnly && !S.bms.has(x.id)) return false;
+  if (S.fps && x.fps !== S.fps) return false;
+  if (S.sim && x.sim.toLowerCase() !== S.sim.toLowerCase()) return false;
+  if (S.dFrom && localDay(x.date) < S.dFrom) return false;
+  if (S.dTo && localDay(x.date) > S.dTo) return false;
+  if (S.color === 'default' && !isDefaultColor(x)) return false;
+  if (S.color === 'other' && isDefaultColor(x)) return false;
+  if (S.mode === 'tag' && S.tags.size && ![...S.tags].every(t => x.tags.includes(t))) return false;
   const words = S.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  if (words.length) list = list.filter(p => { const h = haystack(p).toLowerCase(); return words.every(w => h.includes(w)); });
-  const sorted = [...list];
-  if (S.sort === 'new') sorted.sort((a, b) => b.date.localeCompare(a.date));
-  if (S.sort === 'old') sorted.sort((a, b) => a.date.localeCompare(b.date));
-  if (S.sort === 'name') sorted.sort((a, b) => a.title.localeCompare(b.title, 'ja'));
-  if (S.sort === 'name-desc') sorted.sort((a, b) => b.title.localeCompare(a.title, 'ja'));
-  return sorted;
+  if (words.length) { const h = haystack(x).toLowerCase(); if (!words.every(w => h.includes(w))) return false; }
+  return true;
+}
+function sortItems(list){
+  const s = [...list];
+  if (S.sort === 'new') s.sort((a, b) => b.date.localeCompare(a.date) || natural(a.name, b.name));
+  if (S.sort === 'old') s.sort((a, b) => a.date.localeCompare(b.date) || natural(a.name, b.name));
+  if (S.sort === 'name') s.sort((a, b) => natural(a.name, b.name));
+  if (S.sort === 'name-desc') s.sort((a, b) => natural(b.name, a.name));
+  return s;
 }
 
 function renderAdv(){
@@ -304,40 +368,70 @@ function renderAdv(){
   document.querySelectorAll('#colorSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.color === S.color));
   $('#tagRow').hidden = S.mode !== 'tag';
   const tagCount = {};
-  for (const p of S.posts) for (const t of p.tags) tagCount[t] = (tagCount[t] || 0) + 1;
-  const tags = Object.keys(tagCount).sort((a, b) => tagCount[b] - tagCount[a] || a.localeCompare(b, 'ja'));
+  for (const x of S.items) for (const t of x.tags) tagCount[t] = (tagCount[t] || 0) + 1;
+  const tags = Object.keys(tagCount).sort((a, b) => tagCount[b] - tagCount[a] || natural(a, b));
   $('#tagChips').innerHTML = tags.map(t => `<button type="button" class="tchip" data-tag="${esc(t)}" aria-pressed="${S.tags.has(t)}">${esc(t)}<small>${tagCount[t]}</small></button>`).join('') || '<span class="alabel">まだタグがありません</span>';
   const fpsCount = {};
-  for (const p of S.posts) if (p.fps) fpsCount[p.fps] = (fpsCount[p.fps] || 0) + 1;
+  for (const x of S.items) if (x.fps) fpsCount[x.fps] = (fpsCount[x.fps] || 0) + 1;
   const fpsVals = [...new Set([...FPS_LIST, ...Object.keys(fpsCount)])].sort((a, b) => b - a);
   $('#fps').innerHTML = '<option value="">すべて</option>' + fpsVals.map(v => `<option value="${esc(v)}">${esc(v)}fps（${fpsCount[v] || 0}）</option>`).join('');
   const simCount = {}, simName = {};
-  for (const p of S.posts) { const k = p.sim.toLowerCase(); simCount[k] = (simCount[k] || 0) + 1; simName[k] = simName[k] || p.sim; }
+  for (const x of S.items) { const k = x.sim.toLowerCase(); simCount[k] = (simCount[k] || 0) + 1; simName[k] = simName[k] || x.sim; }
   for (const n of SIM_LIST) simName[n.toLowerCase()] = simName[n.toLowerCase()] || n;
   const simKeys = [...new Set([...SIM_LIST.map(n => n.toLowerCase()), ...Object.keys(simCount)])];
   $('#sim').innerHTML = '<option value="">すべて</option>' + simKeys.map(k => `<option value="${esc(simName[k])}">${esc(simName[k])}（${simCount[k] || 0}）</option>`).join('');
   $('#sim').value = S.sim; $('#dFrom').value = S.dFrom; $('#dTo').value = S.dTo;
   $('#fps').value = S.fps; $('#sort').value = S.sort;
-  $('#q').placeholder = S.mode === 'kw' ? 'タイトル・説明で検索' : S.mode === 'tag' ? 'タグ名で検索' : '全体から検索';
+  $('#q').placeholder = S.mode === 'kw' ? '名前・説明で検索' : S.mode === 'tag' ? 'タグ名で検索' : '全体から検索';
   const n = (S.mode !== 'all') + (S.sort !== 'new') + !!S.fps + !!S.color + !!S.sim + !!S.dFrom + !!S.dTo + (S.mode === 'tag' ? S.tags.size : 0);
   $('#advN').hidden = !n; $('#advN').textContent = n;
-  const bm = $('#bmBtn'); bm.setAttribute('aria-pressed', S.bmOnly); $('#bmCount').textContent = S.posts.filter(p => S.bms.has(p.id)).length;
+  $('#bmBtn').setAttribute('aria-pressed', S.bmOnly); $('#bmCount').textContent = S.items.filter(x => S.bms.has(x.id)).length;
+}
+
+function card(x, showGroup){
+  return `<div class="card" role="button" tabindex="0" data-id="${esc(x.id)}">
+      <div class="thumb">${x.images[0] ? `<img loading="lazy" src="${esc(x.images[0])}" alt="">` : ''}
+        ${x.images.length > 1 ? `<span class="badge">${x.images.length}枚</span>` : ''}</div>
+      <div class="meta"><h3>${esc(x.name)}</h3>
+        <div class="sub">${showGroup ? `<span class="chip">${esc(x.rtitle)}</span>` : ''}${x.fps ? `<span>${esc(x.fps)}fps</span>` : ''}<span>${fmtDate(x.date)}</span></div></div>
+      <button class="bm" data-bm="${esc(x.id)}" aria-pressed="${S.bms.has(x.id)}" aria-label="ブクマ">★</button>
+    </div>`;
 }
 
 function renderGrid(){
-  const list = visible();
-  $('#count').textContent = list.length + '件';
-  $('#grid').innerHTML = list.map(p => `
-    <div class="card" role="button" tabindex="0" data-id="${esc(p.id)}">
-      <div class="thumb">${p.images[0] ? `<img loading="lazy" src="${esc(p.images[0])}" alt="">` : ''}
-        ${p.images.length > 1 ? `<span class="badge">${p.images.length}枚</span>` : ''}</div>
-      <div class="meta"><h3>${esc(p.title)}</h3>
-        <div class="sub">${p.cat ? `<span class="chip">${esc(p.cat)}</span>` : ''}<span>zip ×${p.files.length}</span>${p.fps ? `<span>${esc(p.fps)}fps</span>` : ''}<span>${fmtDate(p.date)}</span></div></div>
-      <button class="bm" data-bm="${esc(p.id)}" aria-pressed="${S.bms.has(p.id)}" aria-label="ブクマ">★</button>
-    </div>`).join('') || `<p class="empty">${!S.posts.length ? 'まだ投稿がありません' : S.bmOnly && !S.posts.some(p => S.bms.has(p.id)) ? 'まだブクマがありません。気になるマイドンの ★ を押すとここに集まります。' : '該当するマイドンがありません'}</p>`;
+  const list = $('#list');
+  const empty = msg => `<p class="empty">${msg}</p>`;
+  let html = '', count = 0, crumb = '';
+  if (isSearching()) {
+    const items = sortItems(S.items.filter(passes)); count = items.length;
+    crumb = S.bmOnly ? '★ ブクマ' : '検索結果（すべての分類）';
+    html = items.length ? `<div class="grid">${items.map(x => card(x, true)).join('')}</div>`
+      : empty(S.bmOnly && !S.items.some(x => S.bms.has(x.id)) ? 'まだブクマがありません。気になるマイドンの ★ を押すとここに集まります。' : '該当するマイドンがありません');
+  } else if (S.cat === 'all') {
+    const items = sortItems(S.items.filter(passes)); count = items.length; crumb = 'すべてのマイドン';
+    html = items.length ? `<div class="grid">${items.map(x => card(x, true)).join('')}</div>` : empty(S.items.length ? '該当するマイドンがありません' : 'まだ投稿がありません');
+  } else {
+    const posts = postsInCat();
+    const catName = S.cat === 'none' ? 'その他' : S.cat;
+    const one = posts.length === 1 ? posts[0] : posts.find(p => p.rid === S.sub);
+    if (one) {
+      const items = sortItems(one.items.filter(passes)); count = items.length;
+      crumb = `${catName} › ${one.rtitle}`;
+      html = items.length ? `<div class="grid">${items.map(x => card(x, false)).join('')}</div>` : empty('該当するマイドンがありません');
+    } else {
+      crumb = catName;
+      html = posts.map(p => {
+        const items = sortItems(p.items.filter(passes)); count += items.length;
+        return items.length ? `<h4 class="sec">${esc(p.rtitle)}<small>${items.length}体</small><button type="button" data-open="${esc(p.rid)}">これだけ見る ›</button></h4><div class="grid">${items.map(x => card(x, false)).join('')}</div>` : '';
+      }).join('') || empty('該当するマイドンがありません');
+    }
+  }
+  $('#crumb').textContent = crumb;
+  $('#count').textContent = count + '体';
+  list.innerHTML = html;
 }
 
-function render(){ renderTabs(); renderAdv(); renderGrid(); }
+function render(){ renderTabs(); renderSubs(); renderAdv(); renderGrid(); }
 
 function toggleBm(id){
   S.bms.has(id) ? S.bms.delete(id) : S.bms.add(id);
@@ -348,30 +442,35 @@ function toggleBm(id){
 function setDbm(b, id){ const on = S.bms.has(id); b.setAttribute('aria-pressed', on); b.textContent = on ? '★ ブクマ済み' : '☆ ブクマする'; }
 
 function openDetail(id){
-  const p = S.posts.find(x => x.id === id); if (!p) return;
+  const x = S.items.find(y => y.id === id); if (!x) return;
+  const post = S.posts.find(p => p.rid === x.rid);
+  const sibs = post ? post.items : [x];
   let i = 0;
   $('#mbody').innerHTML = `<div class="detail">
-    <div class="gal">${p.images.length ? `<img id="gimg" src="${esc(p.images[0])}" alt="">` : ''}
-      ${p.images.length > 1 ? '<button class="nav l" id="gl" aria-label="前の画像">‹</button><button class="nav r" id="gr" aria-label="次の画像">›</button>' : ''}</div>
-    ${p.images.length > 1 ? `<div class="thumbs">${p.images.map((u, k) => `<button data-k="${k}" aria-current="${k === 0}"><img src="${esc(u)}" alt=""></button>`).join('')}</div>` : ''}
-    <h2>${esc(p.title)}</h2>
-    <div class="dmeta">${p.cat ? `<span class="chip">${esc(p.cat)}</span>` : ''}${p.tags.map(t => `<span class="chip">#${esc(t)}</span>`).join('')}${p.fps ? `<span>${esc(p.fps)}fps</span>` : ''}${p.color ? `<span>カラー: ${esc(p.color)}</span>` : ''}<span>${esc(p.sim)}</span><span>${fmtDate(p.date)}</span></div>
-    ${p.desc ? `<p class="desc">${esc(p.desc)}</p>` : ''}
-    <div class="dl">${p.files.map(f => `<div class="frow"><a class="file" href="${esc(f.url)}" target="_blank" rel="noopener"><span>⬇ ${esc(f.name)}</span><small>${fmtSize(f.size)}</small></a><button class="copy" data-copy="${esc(f.url)}" aria-label="${esc(f.name)} のURLをコピー">コピー</button></div>`).join('') || '<p class="count">ダウンロードできるファイルはありません</p>'}</div>
-    <button class="btn primary wide" data-dbm="${esc(p.id)}"></button>
-    <a class="src" href="${esc(p.page)}" target="_blank" rel="noopener">GitHub のリリースを開く</a>
+    <div class="gal">${x.images.length ? `<img id="gimg" src="${esc(x.images[0])}" alt="">` : ''}
+      ${x.images.length > 1 ? '<button class="nav l" id="gl" aria-label="前の画像">‹</button><button class="nav r" id="gr" aria-label="次の画像">›</button>' : ''}</div>
+    ${x.images.length > 1 ? `<div class="thumbs">${x.images.map((u, k) => `<button data-k="${k}" aria-current="${k === 0}"><img src="${esc(u)}" alt=""></button>`).join('')}</div>` : ''}
+    <h2>${esc(x.name)}</h2>
+    <div class="dmeta">${x.cat ? `<span class="chip">${esc(x.cat)}</span>` : ''}<span class="chip">${esc(x.rtitle)}</span>${x.tags.map(t => `<span class="chip">#${esc(t)}</span>`).join('')}${x.fps ? `<span>${esc(x.fps)}fps</span>` : ''}${x.color ? `<span>カラー: ${esc(x.color)}</span>` : ''}<span>${esc(x.sim)}</span><span>${fmtDate(x.date)}</span></div>
+    ${x.desc ? `<p class="desc">${esc(x.desc)}</p>` : ''}
+    <div class="dl">${x.files.map(f => `<div class="frow"><a class="file" href="${esc(f.url)}" target="_blank" rel="noopener"><span>⬇ ${esc(f.name)}</span><small>${fmtSize(f.size)}</small></a><button class="copy" data-copy="${esc(f.url)}" aria-label="${esc(f.name)} のURLをコピー">コピー</button></div>`).join('') || '<p class="count">ダウンロードできるファイルはありません</p>'}</div>
+    <button class="btn primary wide" data-dbm="${esc(x.id)}"></button>
+    ${sibs.length > 1 ? `<p class="slabel">「${esc(x.rtitle)}」の他のマイドン</p><div class="sibs">${sibs.map(y => `<button type="button" data-sib="${esc(y.id)}" aria-current="${y.id === x.id}">${y.images[0] ? `<img src="${esc(y.images[0])}" alt="">` : ''}<span>${esc(y.name)}</span></button>`).join('')}</div>` : ''}
+    <a class="src" href="${esc(x.page)}" target="_blank" rel="noopener">GitHub のリリースを開く</a>
   </div>`;
-  setDbm($('#mbody [data-dbm]'), p.id);
+  setDbm($('#mbody [data-dbm]'), x.id);
   const show = k => {
-    i = (k + p.images.length) % p.images.length;
-    $('#gimg').src = p.images[i];
+    i = (k + x.images.length) % x.images.length;
+    $('#gimg').src = x.images[i];
     document.querySelectorAll('.thumbs button').forEach((t, n) => t.setAttribute('aria-current', n === i));
   };
   $('#gl')?.addEventListener('click', () => show(i - 1));
   $('#gr')?.addEventListener('click', () => show(i + 1));
   document.querySelectorAll('.thumbs button').forEach(t => t.addEventListener('click', () => show(Number(t.dataset.k))));
-  $('#mbody [data-dbm]').addEventListener('click', () => toggleBm(p.id));
+  document.querySelectorAll('[data-sib]').forEach(t => t.addEventListener('click', () => openDetail(t.dataset.sib)));
+  $('#mbody [data-dbm]').addEventListener('click', () => toggleBm(x.id));
   $('#modal').hidden = false;
+  $('.mbox').scrollTop = 0;
   $('#mclose').focus();
 }
 let toastT;
@@ -387,9 +486,10 @@ async function copyText(text){
 function closeModal(){ $('#modal').hidden = true; $('#mbody').innerHTML = ''; }
 
 // ----- イベント -----
-$('#tabs').addEventListener('click', e => { const b = e.target.closest('.tab'); if (!b) return; S.cat = b.dataset.cat; render(); });
-$('#q').addEventListener('input', e => { S.q = e.target.value; renderGrid(); });
-$('#sort').addEventListener('change', e => { S.sort = e.target.value; renderAdv(); renderGrid(); });
+$('#tabs').addEventListener('click', e => { const b = e.target.closest('.tab'); if (!b) return; S.cat = b.dataset.cat; S.sub = 'all'; S.subsOpen = false; if (S.q) { S.q = ''; $('#q').value = ''; } S.bmOnly = false; render(); });
+$('#subs').addEventListener('click', e => { if (e.target.closest('[data-more]')) { S.subsOpen = !S.subsOpen; renderSubs(); return; } const b = e.target.closest('[data-sub]'); if (!b) return; S.sub = b.dataset.sub; renderSubs(); renderGrid(); });
+$('#q').addEventListener('input', e => { S.q = e.target.value; renderTabs(); renderSubs(); renderGrid(); });
+$('#sort').addEventListener('change', e => { S.sort = e.target.value; renderAdv(); renderSubs(); renderGrid(); });
 $('#fps').addEventListener('change', e => { S.fps = e.target.value; renderAdv(); renderGrid(); });
 $('#sim').addEventListener('change', e => { S.sim = e.target.value; renderAdv(); renderGrid(); });
 $('#dFrom').addEventListener('change', e => { S.dFrom = e.target.value; renderAdv(); renderGrid(); });
@@ -401,12 +501,13 @@ $('#advBtn').addEventListener('click', () => { const open = $('#adv').hidden; $(
 document.addEventListener('click', e => { if (!$('#adv').hidden && !e.target.closest('.sbox')) { $('#adv').hidden = true; $('#advBtn').setAttribute('aria-expanded', false); } });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#adv').hidden) { $('#adv').hidden = true; $('#advBtn').setAttribute('aria-expanded', false); } });
 $('#advReset').addEventListener('click', () => { Object.assign(S, { mode: 'all', sort: 'new', fps: '', color: '', sim: '', dFrom: '', dTo: '' }); S.tags.clear(); renderAdv(); renderGrid(); });
-$('#bmBtn').addEventListener('click', () => { S.bmOnly = !S.bmOnly; renderAdv(); renderGrid(); });
-$('#grid').addEventListener('click', e => {
+$('#bmBtn').addEventListener('click', () => { S.bmOnly = !S.bmOnly; render(); });
+$('#list').addEventListener('click', e => {
   const bm = e.target.closest('[data-bm]'); if (bm) { e.stopPropagation(); toggleBm(bm.dataset.bm); return; }
+  const op = e.target.closest('[data-open]'); if (op) { S.sub = op.dataset.open; renderSubs(); renderGrid(); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
   const c = e.target.closest('.card'); if (c) openDetail(c.dataset.id);
 });
-$('#grid').addEventListener('keydown', e => { const c = e.target.closest('.card'); if (c && e.target === c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openDetail(c.dataset.id); } });
+$('#list').addEventListener('keydown', e => { const c = e.target.closest('.card'); if (c && e.target === c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openDetail(c.dataset.id); } });
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 $('#mclose').addEventListener('click', closeModal);
 const THEMES = [['auto', '自動'], ['light', 'ライト'], ['dark', 'ダーク']];
@@ -450,7 +551,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal
     link.href = postUrl();
     ['pointerdown', 'focus'].forEach(ev => link.addEventListener(ev, () => { link.href = postUrl(); }));
     try { S.posts = await loadReleases(); }
-    catch (err) { $('#grid').innerHTML = `<p class="empty">${esc(err.message)}</p>`; return; }
+    catch (err) { $('#list').innerHTML = `<p class="empty">${esc(err.message)}</p>`; return; }
   }
   buildCats(); render();
 })();
