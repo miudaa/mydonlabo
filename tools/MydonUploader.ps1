@@ -108,6 +108,171 @@ function Format-Size([long]$n) {
     return '{0:N0} KB' -f ($n / 1KB)
 }
 
+# ---------- 小分類をまとめる（ダウンロードと組み分け） ----------
+$script:httpNoRedir = New-Object System.Net.Http.HttpClient ((New-Object System.Net.Http.HttpClientHandler -Property @{ AllowAutoRedirect = $false }))
+$script:httpNoRedir.Timeout = [TimeSpan]::FromHours(12)
+$script:httpPlain = New-Object System.Net.Http.HttpClient
+$script:httpPlain.Timeout = [TimeSpan]::FromHours(12)
+
+function Save-AssetTo($asset, [string]$path) {
+    $req = New-GhRequest 'GET' "https://api.github.com/repos/$Owner/$Repo/releases/assets/$($asset.id)"
+    $req.Headers.Accept.Clear(); $req.Headers.Accept.ParseAdd('application/octet-stream')
+    $res = Wait-Task ($script:httpNoRedir.SendAsync($req, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead))
+    if ([int]$res.StatusCode -ge 300 -and [int]$res.StatusCode -lt 400 -and $res.Headers.Location) {
+        # 実体は別のサーバーにあるので、鍵を付けずに取りに行く
+        $res = Wait-Task ($script:httpPlain.GetAsync($res.Headers.Location, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead))
+    }
+    if (-not $res.IsSuccessStatusCode) { throw "$($asset.name) をダウンロードできませんでした（$([int]$res.StatusCode)）" }
+    $src = Wait-Task ($res.Content.ReadAsStreamAsync())
+    $fs = [IO.File]::Create($path)
+    try { Wait-Task ($src.CopyToAsync($fs)) | Out-Null } finally { $fs.Dispose(); $src.Dispose() }
+}
+
+function Get-BodyNames([string]$body) {
+    $map = @{}
+    foreach ($line in ($body -split "`r?`n")) { if ($line -match '^\s*名前\s+(\S+?)\s*[:：]\s*(.+?)\s*$') { $map[$Matches[1].ToLower()] = $Matches[2] } }
+    return $map
+}
+
+# サイトと同じルールで、リリースの添付をマイドン1体ずつに分ける
+function Get-ReleaseItems($rel) {
+    $names = Get-BodyNames ([string]$rel.body)
+    $imgs   = @($rel.assets | Where-Object { $ImageExt -contains [IO.Path]::GetExtension($_.name).ToLower() })
+    $others = @($rel.assets | Where-Object { $ImageExt -notcontains [IO.Path]::GetExtension($_.name).ToLower() })
+    $groups = [ordered]@{}
+    foreach ($f in $others) {
+        $k = ([IO.Path]::GetFileNameWithoutExtension($f.name).ToLower() -replace '^(m\d+)[_\-]\d+$', '$1')
+        if (-not $groups.Contains($k)) { $groups[$k] = [pscustomobject]@{ Stem = $k; Name = [IO.Path]::GetFileNameWithoutExtension($f.name); Images = @(); Files = @() } }
+        $groups[$k].Files += $f
+    }
+    $loose = @()
+    foreach ($im in $imgs) {
+        $k = [IO.Path]::GetFileNameWithoutExtension($im.name).ToLower(); $base = $k -replace '[_\-\s]\d+$', ''
+        if ($groups.Contains($k)) { $groups[$k].Images += $im } elseif ($groups.Contains($base)) { $groups[$base].Images += $im } else { $loose += $im }
+    }
+    $list = @($groups.Values)
+    if (-not @($list | Where-Object { $_.Images.Count }).Count) {
+        return @([pscustomobject]@{ Stem = ''; Name = [string]$rel.name; Images = $imgs; Files = $others })
+    }
+    foreach ($g in $list) {
+        if (-not $g.Images.Count) { $g.Images = $loose }
+        if ($names.ContainsKey($g.Stem)) { $g.Name = $names[$g.Stem] }
+        else { $g.Name = ($g.Name -replace '[_\-\s]*\d+\s*fps$', '') }
+    }
+    if ($list.Count -eq 1 -and -not $names.ContainsKey($list[0].Stem)) { $list[0].Name = [string]$rel.name }
+    return $list
+}
+
+function Set-BodyCategory([string]$body, [string]$cat) {
+    $lines = @($body -split "`r?`n")
+    $found = $false
+    for ($i = 0; $i -lt $lines.Count; $i++) { if ($lines[$i] -match '^\s*(カテゴリ|category)\s*[:：;；]') { $lines[$i] = "カテゴリ: $cat"; $found = $true; break } }
+    if (-not $found) { $lines = @("カテゴリ: $cat") + $lines }
+    return ($lines -join "`n")
+}
+
+function Invoke-Merge($rels, [string]$title, [string]$cat, [bool]$deleteOld) {
+    $target = Invoke-Gh 'GET' "/releases/$($rels[0].id)" $null
+    $sources = @($rels | Select-Object -Skip 1 | ForEach-Object { Invoke-Gh 'GET' "/releases/$($_.id)" $null })
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) ('MydonLaboMerge_' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+    try {
+        # まとめ先がすでにツール形式（m01 など）ならそのまま残し、そうでなければ付け直す
+        $targetIsTool = (@($target.assets).Count -gt 0) -and -not @($target.assets | Where-Object { $_.name -notmatch '^m\d+' }).Count
+        $jobs = @()
+        if (-not $targetIsTool) { foreach ($it in (Get-ReleaseItems $target)) { $jobs += [pscustomobject]@{ Item = $it; FromTarget = $true } } }
+        foreach ($s in $sources) { foreach ($it in (Get-ReleaseItems $s)) { $jobs += [pscustomobject]@{ Item = $it; FromTarget = $false } } }
+        $jobs = @($jobs | Where-Object { $_.Item.Images.Count -or $_.Item.Files.Count })
+
+        $nums = @($target.assets | ForEach-Object { if ($_.name -match '^m(\d+)') { [int]$Matches[1] } })
+        $n = if ($targetIsTool -and $nums.Count) { [int](($nums | Measure-Object -Maximum).Maximum) + 1 } else { 1 }
+        if (-not $targetIsTool -and $nums.Count) { $n = [int](($nums | Measure-Object -Maximum).Maximum) + 1 }
+
+        $total = 0; foreach ($j in $jobs) { $total += $j.Item.Images.Count + $j.Item.Files.Count }
+        $progress.Maximum = [Math]::Max(1, $total * 2); $progress.Value = 0
+        $nameLines = New-Object System.Collections.Generic.List[string]
+        $replaced = New-Object System.Collections.Generic.List[object]
+        foreach ($j in $jobs) {
+            $id = 'm{0:D2}' -f $n; $n++
+            $nameLines.Add("名前 ${id}: $($j.Item.Name)")
+            $k = 0
+            foreach ($a in @($j.Item.Images) + @($j.Item.Files)) {
+                $isImg = $ImageExt -contains [IO.Path]::GetExtension($a.name).ToLower()
+                if ($isImg) { $k++ }
+                $ext = [IO.Path]::GetExtension($a.name).ToLower(); if (-not $ext) { $ext = '.zip' }
+                $idx = if ($isImg) { $k } else { [array]::IndexOf(@($j.Item.Files), $a) + 1 }
+                $fname = if ($idx -le 1) { "$id$ext" } else { "${id}_$idx$ext" }
+                $local = Join-Path $tmp ([guid]::NewGuid().ToString('N') + $ext)
+                $lblStatus.Text = "「$($j.Item.Name)」をダウンロード中… $($a.name)（$(Format-Size $a.size)）"
+                Save-AssetTo $a $local; $progress.Value++
+                $lblStatus.Text = "「$($j.Item.Name)」をアップロード中… $fname"
+                Send-Asset $target.id $local $fname; $progress.Value++
+                Remove-Item $local -Force -ErrorAction SilentlyContinue
+                if ($j.FromTarget) { $replaced.Add($a) }
+            }
+        }
+
+        # 本文：まとめ先の内容（カテゴリやタグなど）を残し、名前の行を付け直す
+        $keep = if ($targetIsTool) { [string]$target.body } else { (@(([string]$target.body) -split "`r?`n") | Where-Object { $_ -notmatch '^\s*名前\s+\S+\s*[:：]' }) -join "`n" }
+        $body = $keep.TrimEnd() + "`n" + ($nameLines -join "`n")
+        if ($cat) { $body = Set-BodyCategory $body $cat }
+        $lblStatus.Text = '仕上げ中…'
+        Invoke-Gh 'PATCH' "/releases/$($target.id)" @{ name = $title; body = $body } | Out-Null
+
+        # ここまで全部うまくいってから、古いファイルと元の小分類を消す
+        foreach ($a in $replaced) { Invoke-Gh 'DELETE' "/releases/assets/$($a.id)" $null | Out-Null }
+        if ($deleteOld) {
+            foreach ($s in $sources) {
+                $lblStatus.Text = "元の小分類「$($s.name)」を削除中…"
+                Invoke-Gh 'DELETE' "/releases/$($s.id)" $null | Out-Null
+                try { Invoke-Gh 'DELETE' ('/git/refs/tags/' + [Uri]::EscapeDataString($s.tag_name)) $null | Out-Null } catch { }
+            }
+        }
+        return $jobs.Count
+    } finally {
+        Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Show-MergeDialog {
+    if (-not $script:token) { [System.Windows.Forms.MessageBox]::Show('先に「トークン設定」をして下さい。', 'マイドンラボ') | Out-Null; return }
+    if ($script:releases.Count -lt 2) { [System.Windows.Forms.MessageBox]::Show('まとめられる小分類が2つ以上ありません。↻ で読み込み直して下さい。', 'マイドンラボ') | Out-Null; return }
+    $d = New-Object System.Windows.Forms.Form
+    $d.Text = '小分類をまとめる'; $d.Font = $font; $d.ClientSize = (New-Object System.Drawing.Size (460, 430))
+    $d.StartPosition = 'CenterParent'; $d.FormBorderStyle = 'FixedDialog'; $d.MaximizeBox = $false; $d.MinimizeBox = $false
+    $l1 = New-Object System.Windows.Forms.Label; $l1.Text = 'まとめる小分類を2つ以上チェックして下さい（一番上のものにまとめます）'; $l1.Location = (New-Object System.Drawing.Point (14, 12)); $l1.Size = (New-Object System.Drawing.Size (432, 22)); $d.Controls.Add($l1)
+    $clb = New-Object System.Windows.Forms.CheckedListBox; $clb.Location = (New-Object System.Drawing.Point (14, 38)); $clb.Size = (New-Object System.Drawing.Size (432, 190)); $clb.CheckOnClick = $true; $d.Controls.Add($clb)
+    foreach ($item in $cbExisting.Items) { [void]$clb.Items.Add($item) }
+    $l2 = New-Object System.Windows.Forms.Label; $l2.Text = 'まとめた後の小分類の名前'; $l2.Location = (New-Object System.Drawing.Point (14, 240)); $l2.Size = (New-Object System.Drawing.Size (432, 22)); $d.Controls.Add($l2)
+    $tTitle = New-Object System.Windows.Forms.TextBox; $tTitle.Location = (New-Object System.Drawing.Point (14, 264)); $tTitle.Size = (New-Object System.Drawing.Size (432, 26)); $d.Controls.Add($tTitle)
+    $l3 = New-Object System.Windows.Forms.Label; $l3.Text = '大分類（空ならまとめ先のまま）'; $l3.Location = (New-Object System.Drawing.Point (14, 298)); $l3.Size = (New-Object System.Drawing.Size (432, 22)); $d.Controls.Add($l3)
+    $cCat = New-Object System.Windows.Forms.ComboBox; $cCat.Location = (New-Object System.Drawing.Point (14, 322)); $cCat.Size = (New-Object System.Drawing.Size (432, 26)); $d.Controls.Add($cCat)
+    foreach ($c in $cbCat.Items) { [void]$cCat.Items.Add($c) }
+    $chk = New-Object System.Windows.Forms.CheckBox; $chk.Text = 'まとめ終わったら元の小分類を削除する'; $chk.Checked = $true; $chk.Location = (New-Object System.Drawing.Point (14, 356)); $chk.Size = (New-Object System.Drawing.Size (432, 24)); $d.Controls.Add($chk)
+    $ok = New-Object System.Windows.Forms.Button; $ok.Text = 'まとめる'; $ok.Location = (New-Object System.Drawing.Point (254, 390)); $ok.Size = (New-Object System.Drawing.Size (92, 30)); $d.Controls.Add($ok)
+    $cancel = New-Object System.Windows.Forms.Button; $cancel.Text = 'やめる'; $cancel.Location = (New-Object System.Drawing.Point (354, 390)); $cancel.Size = (New-Object System.Drawing.Size (92, 30)); $cancel.DialogResult = 'Cancel'; $d.Controls.Add($cancel)
+    $d.CancelButton = $cancel
+    $clb.Add_ItemCheck({ param($sender, $e)
+        if ($e.NewValue -eq [System.Windows.Forms.CheckState]::Checked -and -not $tTitle.Text) { $tTitle.Text = [string]$script:releases[$e.Index].name }
+    })
+    $ok.Add_Click({
+        if ($clb.CheckedIndices.Count -lt 2) { [System.Windows.Forms.MessageBox]::Show('2つ以上チェックして下さい。', 'マイドンラボ') | Out-Null; return }
+        if (-not $tTitle.Text.Trim()) { [System.Windows.Forms.MessageBox]::Show('まとめた後の名前を入れて下さい。', 'マイドンラボ') | Out-Null; return }
+        $d.DialogResult = 'OK'; $d.Close()
+    })
+    if ($d.ShowDialog($form) -ne 'OK') { return }
+    $sel = @($clb.CheckedIndices | ForEach-Object { $script:releases[$_] })
+    $btnPost.Enabled = $false; $btnMerge.Enabled = $false
+    try {
+        $count = Invoke-Merge $sel $tTitle.Text.Trim() $cCat.Text.Trim() $chk.Checked
+        $lblStatus.Text = "まとめました！「$($tTitle.Text.Trim())」に $count 体を入れました。サイトを再読み込みすると出ます。"
+        Load-Releases
+    } catch {
+        $lblStatus.Text = 'エラー：' + $_.Exception.Message
+        [System.Windows.Forms.MessageBox]::Show("まとめる途中で止まりました。`n`n$($_.Exception.Message)`n`n元の小分類はまだ消していません。まとめ先に途中まで上がったファイルがあれば、GitHub で削除して下さい。", 'マイドンラボ') | Out-Null
+    } finally { $btnPost.Enabled = $true; $btnMerge.Enabled = $true }
+}
+
 # ---------- 画面 ----------
 $font = New-Object System.Drawing.Font ('Yu Gothic UI', 9.5)
 $form = New-Object System.Windows.Forms.Form
@@ -144,6 +309,8 @@ $cbExisting = Add-Control (New-Object System.Windows.Forms.ComboBox) 16 80 540
 $cbExisting.DropDownStyle = 'DropDownList'; $cbExisting.Enabled = $false
 $btnReload = Add-Control (New-Object System.Windows.Forms.Button) 562 79 42 28
 $btnReload.Text = '↻'
+$btnMerge = Add-Control (New-Object System.Windows.Forms.Button) 430 45 174 28
+$btnMerge.Text = '小分類をまとめる…'
 
 # 項目
 $y = 124
@@ -262,6 +429,7 @@ $btnToken.Add_Click({
 $rbNew.Add_CheckedChanged({ Update-Mode })
 $rbAdd.Add_CheckedChanged({ Update-Mode })
 $btnReload.Add_Click({ Load-Releases })
+$btnMerge.Add_Click({ Show-MergeDialog })
 
 $btnAddM.Add_Click({
     $dlg = New-Object System.Windows.Forms.OpenFileDialog
