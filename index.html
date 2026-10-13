@@ -92,7 +92,7 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
 <body>
 <header class="topbar">
   <a class="brand" href="#"><img class="logo" src="logo64.png" alt=""><div><b>マイドンラボ</b></div></a>
-  <a class="btn" id="postLink" href="https://github.com" target="_blank" rel="noopener" title="管理者用：GitHub でリリースを作成">＋ 投稿</a>
+  <a class="btn" id="postLink" hidden href="https://github.com" target="_blank" rel="noopener" title="管理者用：GitHub でリリースを作成">＋ 投稿</a>
 </header>
 <div class="tabsbar"><nav class="tabs" id="tabs" aria-label="カテゴリ"></nav></div>
 <main>
@@ -299,6 +299,10 @@ $('#grid').addEventListener('click', e => {
 $('#grid').addEventListener('keydown', e => { const c = e.target.closest('.card'); if (c && e.target === c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openDetail(c.dataset.id); } });
 $('#modal').addEventListener('click', e => { if (e.target.id === 'modal') closeModal(); });
 $('#mclose').addEventListener('click', closeModal);
+const syncAdmin = () => { $('#postLink').hidden = location.hash !== '#admin'; };
+window.addEventListener('hashchange', syncAdmin);
+syncAdmin();
+document.querySelector('.brand').addEventListener('click', e => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
 $('#mbody').addEventListener('click', async e => {
   const b = e.target.closest('[data-copy]'); if (!b) return;
   if (await copyText(b.dataset.copy)) {
