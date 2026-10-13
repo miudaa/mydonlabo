@@ -41,6 +41,12 @@ a{color:inherit}
 .sub-btn.more{color:var(--muted);border-style:dashed}
 .sec{margin:16px 0 8px;font-size:13px;display:flex;align-items:baseline;gap:8px}
 .sec:first-child{margin-top:0}
+.catsec + .catsec{margin-top:22px;padding-top:16px;border-top:1px solid var(--line)}
+.cathead{margin:0 0 4px;font-size:15px;display:flex;align-items:baseline;gap:8px}
+.cathead small{color:var(--muted);font-weight:400;font-size:12px}
+.cathead button{margin-left:auto;background:none;border:0;color:var(--muted);font:inherit;font-size:11px;cursor:pointer}
+.cathead button:hover{color:var(--accent)}
+.catsec .sec{margin-top:12px;font-size:12.5px}
 .sec small{color:var(--muted);font-weight:400}
 .sec button{margin-left:auto;background:none;border:0;color:var(--muted);font:inherit;font-size:11px;cursor:pointer}
 .sec button:hover{color:var(--accent)}
@@ -419,8 +425,19 @@ function renderGrid(){
     html = items.length ? `<div class="grid">${items.map(x => card(x, true)).join('')}</div>`
       : empty(S.bmOnly && !S.items.some(x => S.bms.has(x.id)) ? 'まだブクマがありません。気になるマイドンの ★ を押すとここに集まります。' : '該当するマイドンがありません');
   } else if (S.cat === 'all') {
-    const items = sortItems(S.items.filter(passes)); count = items.length; crumb = 'すべてのマイドン';
-    html = items.length ? `<div class="grid">${items.map(x => card(x, true)).join('')}</div>` : empty(S.items.length ? '該当するマイドンがありません' : 'まだ投稿がありません');
+    crumb = 'すべてのマイドン';
+    // 大分類ごとに見出しを付け、その中を小分類ごとにまとめる（フォルダのように）
+    const cats = [...S.cats, ...(S.posts.some(p => !p.cat) ? ['none'] : [])];
+    html = cats.map(c => {
+      const posts = S.posts.filter(p => inCat(p, c)).sort((a, b) => S.sort === 'old' ? a.date.localeCompare(b.date) : S.sort.startsWith('name') ? natural(a.rtitle, b.rtitle) * (S.sort === 'name-desc' ? -1 : 1) : b.date.localeCompare(a.date));
+      let n = 0;
+      const inner = posts.map(p => {
+        const items = sortItems(p.items.filter(passes)); n += items.length;
+        return items.length ? `<h4 class="sec">${esc(p.rtitle)}<small>${items.length}体</small><button type="button" data-open="${esc(p.rid)}" data-cat="${esc(c)}">これだけ見る ›</button></h4><div class="grid">${items.map(x => card(x, false)).join('')}</div>` : '';
+      }).join('');
+      count += n;
+      return n ? `<section class="catsec"><h3 class="cathead">${esc(c === 'none' ? 'その他' : c)}<small>${n}体</small><button type="button" data-gocat="${esc(c)}">このタブを開く ›</button></h3>${inner}</section>` : '';
+    }).join('') || empty(S.items.length ? '該当するマイドンがありません' : 'まだ投稿がありません');
   } else {
     const posts = postsInCat();
     const catName = S.cat === 'none' ? 'その他' : S.cat;
@@ -516,7 +533,8 @@ $('#advReset').addEventListener('click', () => { Object.assign(S, { mode: 'all',
 $('#bmBtn').addEventListener('click', () => { S.bmOnly = !S.bmOnly; render(); });
 $('#list').addEventListener('click', e => {
   const bm = e.target.closest('[data-bm]'); if (bm) { e.stopPropagation(); toggleBm(bm.dataset.bm); return; }
-  const op = e.target.closest('[data-open]'); if (op) { S.sub = op.dataset.open; renderSubs(); renderGrid(); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+  const gc = e.target.closest('[data-gocat]'); if (gc) { S.cat = gc.dataset.gocat; S.sub = 'all'; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
+  const op = e.target.closest('[data-open]'); if (op) { if (op.dataset.cat) S.cat = op.dataset.cat; S.sub = op.dataset.open; render(); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
   const c = e.target.closest('.card'); if (c) openDetail(c.dataset.id);
 });
 $('#list').addEventListener('keydown', e => { const c = e.target.closest('.card'); if (c && e.target === c && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); openDetail(c.dataset.id); } });
