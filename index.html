@@ -29,6 +29,8 @@ a{color:inherit}
 .brand small{display:block;color:var(--muted);font-size:11px}
 .logo{width:32px;height:32px;display:block;flex:none}
 .top-actions{display:flex;align-items:center;gap:8px;flex:none}
+.brand-wrap{display:flex;align-items:center;gap:10px;min-width:0}
+.btn.icon{width:30px;height:30px;padding:0;display:grid;place-items:center;font-size:15px;line-height:1}
 .btn{background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 10px;cursor:pointer;font:inherit;text-decoration:none;display:inline-block;white-space:nowrap}
 .btn:hover{border-color:var(--muted)}
 .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
@@ -44,7 +46,12 @@ main{max-width:1100px;margin:0 auto;padding-block:12px 32px;padding-inline:14px}
 .note{color:var(--muted);font-size:11px;margin:0 0 10px}
 .tools{display:flex;gap:6px;align-items:center;margin:0 0 12px;flex-wrap:wrap}
 input,select{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font:inherit}
-#q{flex:1 1 200px;min-width:0}
+.search{flex:1 1 240px;min-width:0;display:flex;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:6px}
+.search:focus-within{border-color:var(--accent)}
+.sicon{flex:none;margin-left:9px;color:var(--muted)}
+.search input{flex:1;min-width:0;border:0;background:none;outline:none}
+.search select{flex:none;border:0;border-left:1px solid var(--line);border-radius:0 6px 6px 0;background:none;color:var(--muted);padding-inline:8px 6px;cursor:pointer}
+.search select:focus-visible,.search input:focus-visible{outline:none}
 .count{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
 .card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px;cursor:pointer}
@@ -93,16 +100,15 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
 </head>
 <body>
 <header class="topbar">
-  <a class="brand" href="#"><img class="logo" src="logo64.png" alt=""><div><b>マイドンラボ</b></div></a>
-  <div class="top-actions"><button class="btn" id="themeBtn" type="button" aria-label="表示モードを切り替え"></button>
+  <div class="brand-wrap"><a class="brand" href="#"><img class="logo" src="logo64.png" alt=""><b>マイドンラボ</b></a><button class="btn icon" id="themeBtn" type="button"></button></div>
+  <div class="top-actions">
   <a class="btn" id="postLink" hidden href="https://github.com" target="_blank" rel="noopener" title="管理者用：GitHub でリリースを作成">＋ 投稿</a></div>
 </header>
 <div class="tabsbar"><nav class="tabs" id="tabs" aria-label="カテゴリ"></nav></div>
 <main>
   <p class="note" id="demoNote" hidden>プレビュー：サンプルデータを表示しています。公開版では GitHub のリリースがここに並びます。</p>
   <div class="tools">
-    <input id="q" type="search" placeholder="タイトル・説明で検索" aria-label="検索">
-    <select id="sort" aria-label="並び順"><option value="new">新しい順</option><option value="old">古い順</option><option value="name">名前順</option></select>
+    <div class="search"><svg class="sicon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><input id="q" type="search" placeholder="タイトル・説明で検索" aria-label="検索"><select id="sort" aria-label="並び順"><option value="new">新しい順</option><option value="old">古い順</option><option value="name">名前順</option></select></div>
     <span class="count" id="count"></span>
   </div>
   <div class="grid" id="grid"><p class="empty">読み込み中…</p></div>
@@ -307,7 +313,8 @@ let theme = 'auto';
 try { const t = localStorage.getItem('mydon-theme'); if (t === 'light' || t === 'dark') theme = t; } catch {}
 function applyTheme(){
   if (theme === 'auto') delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = theme;
-  $('#themeBtn').textContent = (theme === 'dark' ? '☾ ' : theme === 'light' ? '☀ ' : '◐ ') + THEMES.find(t => t[0] === theme)[1];
+  const label = '表示モード：' + THEMES.find(t => t[0] === theme)[1];
+  const tb = $('#themeBtn'); tb.textContent = theme === 'dark' ? '☾' : theme === 'light' ? '☀' : '◐'; tb.title = label; tb.setAttribute('aria-label', label + '（押すと切り替え）');
   try { theme === 'auto' ? localStorage.removeItem('mydon-theme') : localStorage.setItem('mydon-theme', theme); } catch {}
 }
 $('#themeBtn').addEventListener('click', () => { const i = THEMES.findIndex(t => t[0] === theme); theme = THEMES[(i + 1) % THEMES.length][0]; applyTheme(); });
