@@ -9,6 +9,7 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Net.Http
 Add-Type -AssemblyName Microsoft.VisualBasic
+Add-Type -AssemblyName System.Security
 [System.Windows.Forms.Application]::EnableVisualStyles()
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
@@ -17,18 +18,34 @@ $TokenFile = Join-Path $ConfDir 'token.txt'
 $ImageExt  = @('.png', '.gif', '.jpg', '.jpeg', '.webp')
 
 # ---------- トークン（このPCのこのユーザーだけが読める形で保存） ----------
+$script:tokenError = ''
 function Get-Token {
+    $script:tokenError = ''
     if (-not (Test-Path $TokenFile)) { return $null }
     try {
-        $sec = Get-Content $TokenFile -Raw | ConvertTo-SecureString
+        $enc = ([IO.File]::ReadAllText($TokenFile)).Trim()
+        if (-not $enc) { return $null }
+        if ($enc.StartsWith('dpapi:')) {
+            $bytes = [Security.Cryptography.ProtectedData]::Unprotect([Convert]::FromBase64String($enc.Substring(6)), $null, 'CurrentUser')
+            return [Text.Encoding]::UTF8.GetString($bytes)
+        }
+        # 前の版で保存したトークン
+        $sec = ConvertTo-SecureString -String $enc
         $ptr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec)
         try { return [Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr) }
         finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr) }
-    } catch { return $null }
+    } catch {
+        $script:tokenError = $_.Exception.Message
+        return $null
+    }
 }
 function Save-Token([string]$t) {
     New-Item -ItemType Directory -Force -Path $ConfDir | Out-Null
-    ConvertTo-SecureString $t -AsPlainText -Force | ConvertFrom-SecureString | Set-Content -Path $TokenFile
+    $bytes = [Security.Cryptography.ProtectedData]::Protect([Text.Encoding]::UTF8.GetBytes($t), $null, 'CurrentUser')
+    [IO.File]::WriteAllText($TokenFile, 'dpapi:' + [Convert]::ToBase64String($bytes))
+    # 書けたかどうか、その場で読み直して確かめる
+    $check = Get-Token
+    if ($check -ne $t) { throw "トークンを保存できませんでした（$TokenFile）。$script:tokenError" }
 }
 
 # ---------- GitHub との通信 ----------
@@ -180,6 +197,7 @@ $script:token    = Get-Token
 
 function Update-TokenLabel {
     if ($script:token) { $lblToken.Text = "投稿先：$Owner/$Repo（トークン設定済み）"; $lblToken.ForeColor = [System.Drawing.Color]::DarkGreen }
+    elseif ($script:tokenError) { $lblToken.Text = "保存したトークンを読めませんでした：$script:tokenError"; $lblToken.ForeColor = [System.Drawing.Color]::Firebrick }
     else { $lblToken.Text = 'まず「トークン設定」をして下さい'; $lblToken.ForeColor = [System.Drawing.Color]::Firebrick }
 }
 function Update-List {
@@ -236,7 +254,10 @@ function Load-Releases {
 $btnToken.Add_Click({
     $msg = "GitHub のトークンを貼り付けて下さい。`n（Fine-grained token／リポジトリ $Repo／Contents: Read and write）`n`nこのPCの、このユーザーだけが読める形で保存されます。"
     $t = [Microsoft.VisualBasic.Interaction]::InputBox($msg, 'トークン設定', '')
-    if ($t.Trim()) { Save-Token $t.Trim(); $script:token = $t.Trim(); Update-TokenLabel; Load-Releases }
+    if ($t.Trim()) {
+        try { Save-Token $t.Trim() } catch { [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'マイドンラボ') | Out-Null }
+        $script:token = $t.Trim(); Update-TokenLabel; Load-Releases
+    }
 })
 $rbNew.Add_CheckedChanged({ Update-Mode })
 $rbAdd.Add_CheckedChanged({ Update-Mode })
