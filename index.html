@@ -12,13 +12,13 @@
 :root{
   --bg:#f4f1ea; --panel:#ffffff; --ink:#23201c; --muted:#7a736a; --line:#e2ddd3;
   --accent:#f64828; --accent-ink:#ffffff; --gold:#d99a00;
-  --check-a:rgba(127,127,127,.12); --badge-bg:rgba(0,0,0,.6); --scrim:rgba(0,0,0,.55);
+  --check-a:rgba(127,127,127,.12); --tab-off:#ebe7de; --badge-bg:rgba(0,0,0,.6); --scrim:rgba(0,0,0,.55);
   --f-body:"Segoe UI","Yu Gothic UI","Meiryo","Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans CJK JP",sans-serif;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#1c1d21; --panel:#25272d; --ink:#ecebe8; --muted:#9a978f; --line:#363840; --gold:#f0b429; color-scheme:dark}}
+  --bg:#1c1d21; --panel:#25272d; --ink:#ecebe8; --muted:#9a978f; --line:#363840; --gold:#f0b429; --tab-off:#202227; color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#1c1d21; --panel:#25272d; --ink:#ecebe8; --muted:#9a978f; --line:#363840; --gold:#f0b429; color-scheme:dark}
+  --bg:#1c1d21; --panel:#25272d; --ink:#ecebe8; --muted:#9a978f; --line:#363840; --gold:#f0b429; --tab-off:#202227; color-scheme:dark}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.5 var(--f-body)}
@@ -33,12 +33,12 @@ a{color:inherit}
 .btn:hover{border-color:var(--muted)}
 .btn.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .btn.wide{width:100%;padding:9px 10px;text-align:center}
-.tabsbar{background:var(--panel);border-bottom:1px solid var(--line)}
-.tabs{max-width:1100px;margin:0 auto;display:flex;overflow-x:auto;scrollbar-width:none;padding-inline:8px}
+.tabsbar{background:var(--panel);border-bottom:1px solid var(--line);padding-top:8px}
+.tabs{max-width:1100px;margin:0 auto;display:flex;align-items:flex-end;gap:4px;overflow-x:auto;scrollbar-width:none;padding-inline:14px}
 .tabs::-webkit-scrollbar{display:none}
-.tab{flex:none;background:none;border:0;border-bottom:2px solid transparent;padding:10px 12px;color:var(--muted);cursor:pointer;font:inherit}
+.tab{flex:none;margin-bottom:-1px;background:var(--tab-off);border:1px solid var(--line);border-radius:8px 8px 0 0;padding:7px 14px;color:var(--muted);cursor:pointer;font:inherit;position:relative}
 .tab:hover{color:var(--ink)}
-.tab[aria-pressed="true"]{color:var(--ink);border-bottom-color:var(--accent);font-weight:600}
+.tab[aria-pressed="true"]{background:var(--bg);border-bottom-color:var(--bg);color:var(--ink);font-weight:600;padding-top:9px;box-shadow:inset 0 2px 0 var(--accent)}
 .tab small{font-size:11px;margin-left:4px;opacity:.75;font-variant-numeric:tabular-nums}
 main{max-width:1100px;margin:0 auto;padding-block:12px 32px;padding-inline:14px}
 .note{color:var(--muted);font-size:11px;margin:0 0 10px}
