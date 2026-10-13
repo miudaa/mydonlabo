@@ -315,7 +315,15 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal
     if (document.fonts) { try { await document.fonts.ready; } catch {} }
     S.posts = demoPosts();
   } else {
-    $('#postLink').href = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/new`;
+    const postUrl = () => {
+      const d = new Date(), z = n => String(n).padStart(2, '0');
+      const tag = `post-${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`;
+      const q = new URLSearchParams({ tag, body: 'カテゴリ: ' });
+      return `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/new?${q}`;
+    };
+    const link = $('#postLink');
+    link.href = postUrl();
+    ['pointerdown', 'focus'].forEach(ev => link.addEventListener(ev, () => { link.href = postUrl(); }));
     try { S.posts = await loadReleases(); }
     catch (err) { $('#grid').innerHTML = `<p class="empty">${esc(err.message)}</p>`; return; }
   }
