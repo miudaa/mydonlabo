@@ -148,19 +148,15 @@ function fromRelease(r){
 }
 
 async function loadReleases(){
-  const key = `mydon-cache-${GITHUB_OWNER}/${GITHUB_REPO}`;
-  try { const c = JSON.parse(sessionStorage.getItem(key) || 'null'); if (c && c.d.length && Date.now() - c.t < 60000) return c.d; } catch {}
   const all = [];
   for (let page = 1; page <= 10; page++) {
-    const res = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases?per_page=100&page=${page}`, { headers: { Accept: 'application/vnd.github+json' } });
+    const res = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases?per_page=100&page=${page}`, { headers: { Accept: 'application/vnd.github+json' }, cache: 'no-store' });
     if (!res.ok) throw new Error(res.status === 403 ? '少し時間をおいて再読み込みして下さい（GitHub の取得回数の上限）' : `GitHub から取得できませんでした（${res.status}）`);
     const list = await res.json();
     all.push(...list.filter(r => !r.draft));
     if (list.length < 100) break;
   }
-  const d = all.map(fromRelease);
-  if (d.length) { try { sessionStorage.setItem(key, JSON.stringify({ t: Date.now(), d })); } catch {} }
-  return d;
+  return all.map(fromRelease);
 }
 
 // ----- プレビュー用のサンプル（本物のマイドン画像ではありません） -----
