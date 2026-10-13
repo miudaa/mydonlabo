@@ -149,7 +149,7 @@ function fromRelease(r){
 
 async function loadReleases(){
   const key = `mydon-cache-${GITHUB_OWNER}/${GITHUB_REPO}`;
-  try { const c = JSON.parse(sessionStorage.getItem(key) || 'null'); if (c && Date.now() - c.t < 600000) return c.d; } catch {}
+  try { const c = JSON.parse(sessionStorage.getItem(key) || 'null'); if (c && c.d.length && Date.now() - c.t < 60000) return c.d; } catch {}
   const all = [];
   for (let page = 1; page <= 10; page++) {
     const res = await fetch(`https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/releases?per_page=100&page=${page}`, { headers: { Accept: 'application/vnd.github+json' } });
@@ -159,7 +159,7 @@ async function loadReleases(){
     if (list.length < 100) break;
   }
   const d = all.map(fromRelease);
-  try { sessionStorage.setItem(key, JSON.stringify({ t: Date.now(), d })); } catch {}
+  if (d.length) { try { sessionStorage.setItem(key, JSON.stringify({ t: Date.now(), d })); } catch {} }
   return d;
 }
 
