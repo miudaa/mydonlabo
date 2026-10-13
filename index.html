@@ -140,6 +140,13 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
 #toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--badge-bg);color:#fff;font-size:12px;padding:6px 12px;border-radius:6px;z-index:60;pointer-events:none;opacity:0;transition:opacity .2s}
 #toast.show{opacity:1}
 @media (max-width:760px){.brand small{display:none}}
+@media (min-width:860px){
+  .mbox{max-width:920px;padding:20px 22px}
+  .detail{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:20px;align-items:start}
+  .dmedia{position:sticky;top:0}
+  .dinfo{padding-top:24px;min-width:0}
+  .dinfo h2{margin-top:0;font-size:18px}
+}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 </style>
 </head>
@@ -446,10 +453,11 @@ function openDetail(id){
   const post = S.posts.find(p => p.rid === x.rid);
   const sibs = post ? post.items : [x];
   let i = 0;
-  $('#mbody').innerHTML = `<div class="detail">
+  $('#mbody').innerHTML = `<div class="detail"><div class="dmedia">
     <div class="gal">${x.images.length ? `<img id="gimg" src="${esc(x.images[0])}" alt="">` : ''}
       ${x.images.length > 1 ? '<button class="nav l" id="gl" aria-label="前の画像">‹</button><button class="nav r" id="gr" aria-label="次の画像">›</button>' : ''}</div>
     ${x.images.length > 1 ? `<div class="thumbs">${x.images.map((u, k) => `<button data-k="${k}" aria-current="${k === 0}"><img src="${esc(u)}" alt=""></button>`).join('')}</div>` : ''}
+    </div><div class="dinfo">
     <h2>${esc(x.name)}</h2>
     <div class="dmeta">${x.cat ? `<span class="chip">${esc(x.cat)}</span>` : ''}<span class="chip">${esc(x.rtitle)}</span>${x.tags.map(t => `<span class="chip">#${esc(t)}</span>`).join('')}${x.fps ? `<span>${esc(x.fps)}fps</span>` : ''}${x.color ? `<span>カラー: ${esc(x.color)}</span>` : ''}<span>${esc(x.sim)}</span><span>${fmtDate(x.date)}</span></div>
     ${x.desc ? `<p class="desc">${esc(x.desc)}</p>` : ''}
@@ -457,7 +465,7 @@ function openDetail(id){
     <button class="btn primary wide" data-dbm="${esc(x.id)}"></button>
     ${sibs.length > 1 ? `<p class="slabel">「${esc(x.rtitle)}」の他のマイドン</p><div class="sibs">${sibs.map(y => `<button type="button" data-sib="${esc(y.id)}" aria-current="${y.id === x.id}">${y.images[0] ? `<img src="${esc(y.images[0])}" alt="">` : ''}<span>${esc(y.name)}</span></button>`).join('')}</div>` : ''}
     <a class="src" href="${esc(x.page)}" target="_blank" rel="noopener">GitHub のリリースを開く</a>
-  </div>`;
+  </div></div>`;
   setDbm($('#mbody [data-dbm]'), x.id);
   const show = k => {
     i = (k + x.images.length) % x.images.length;
