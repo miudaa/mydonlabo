@@ -132,7 +132,7 @@ function saveBms(){ try { localStorage.setItem(BM_KEY, JSON.stringify([...S.bms]
 function parseBody(body){
   let cat = null; const rest = [];
   for (const line of String(body || '').split(/\r?\n/)) {
-    const m = line.match(/^\s*(?:カテゴリ|category)\s*[:：]\s*(.+?)\s*$/i);
+    const m = line.match(/^\s*(?:カテゴリ|category)\s*[:：;；]\s*(.+?)\s*$/i);
     if (m && !cat) cat = m[1]; else rest.push(line);
   }
   return { cat, desc: rest.join('\n').trim() };
