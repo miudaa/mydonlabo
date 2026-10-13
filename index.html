@@ -51,7 +51,29 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
 .sicon{flex:none;margin-left:9px;color:var(--muted)}
 .search input{flex:1;min-width:0;border:0;background:none;outline:none}
 .search select{flex:none;border:0;border-left:1px solid var(--line);border-radius:0 6px 6px 0;background:none;color:var(--muted);padding-inline:8px 6px;cursor:pointer}
-.search select:focus-visible,.search input:focus-visible{outline:none}
+.search input:focus-visible{outline:none}
+.advbtn{flex:none;font:inherit;border:0;border-left:1px solid var(--line);border-radius:0 6px 6px 0;background:none;color:var(--muted);padding:6px 10px;cursor:pointer;white-space:nowrap;display:flex;align-items:center;gap:5px}
+.advbtn:hover,.advbtn[aria-expanded="true"]{color:var(--ink)}
+.advbtn .n{background:var(--accent);color:var(--accent-ink);border-radius:999px;font-size:10px;min-width:16px;height:16px;padding:0 4px;display:inline-grid;place-items:center}
+.advbtn .car{font-size:10px;transition:transform .15s}
+.advbtn[aria-expanded="true"] .car{transform:rotate(180deg)}
+.adv{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:-4px 0 12px;display:grid;gap:10px}
+.arow{display:grid;grid-template-columns:5.5em 1fr;gap:8px;align-items:center;min-width:0}
+.arow.end{grid-template-columns:1fr;justify-items:end}
+.alabel{font-size:12px;color:var(--muted)}
+.arow select{justify-self:start;min-width:10em;background:var(--bg)}
+.seg{display:inline-flex;flex-wrap:wrap;justify-self:start;border:1px solid var(--line);border-radius:999px;overflow:hidden}
+.seg button{background:transparent;border:0;color:inherit;font:inherit;font-size:12px;padding:4px 12px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--accent-ink)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.tchip{background:var(--bg);border:1px solid var(--line);border-radius:999px;padding:3px 10px;color:var(--ink);cursor:pointer;font:inherit;font-size:12px}
+.tchip small{color:var(--muted);margin-left:4px}
+.tchip[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.tchip[aria-pressed="true"] small{color:inherit;opacity:.8}
+.bmbtn{height:30px;padding:0 9px;display:flex;align-items:center;gap:4px;color:var(--muted)}
+.bmbtn small{font-size:11px;font-variant-numeric:tabular-nums}
+.bmbtn[aria-pressed="true"]{color:var(--gold);border-color:var(--gold)}
+@media (max-width:420px){.arow{grid-template-columns:1fr;gap:4px}}
 .count{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
 .card{position:relative;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:6px;cursor:pointer}
@@ -100,7 +122,7 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
 </head>
 <body>
 <header class="topbar">
-  <div class="brand-wrap"><a class="brand" href="#"><img class="logo" src="logo64.png" alt=""><b>マイドンラボ</b></a><button class="btn icon" id="themeBtn" type="button"></button></div>
+  <div class="brand-wrap"><a class="brand" href="#"><img class="logo" src="logo64.png" alt=""><b>マイドンラボ</b></a><button class="btn icon" id="themeBtn" type="button"></button><button class="btn bmbtn" id="bmBtn" type="button" aria-pressed="false" title="ブクマだけ表示">★<small id="bmCount">0</small></button></div>
   <div class="top-actions">
   <a class="btn" id="postLink" hidden href="https://github.com" target="_blank" rel="noopener" title="管理者用：GitHub でリリースを作成">＋ 投稿</a></div>
 </header>
@@ -108,8 +130,16 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
 <main>
   <p class="note" id="demoNote" hidden>プレビュー：サンプルデータを表示しています。公開版では GitHub のリリースがここに並びます。</p>
   <div class="tools">
-    <div class="search"><svg class="sicon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><input id="q" type="search" placeholder="タイトル・説明で検索" aria-label="検索"><select id="sort" aria-label="並び順"><option value="new">新しい順</option><option value="old">古い順</option><option value="name">名前順</option></select></div>
+    <div class="search"><svg class="sicon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><input id="q" type="search" placeholder="タイトル・説明で検索" aria-label="検索"><button class="advbtn" id="advBtn" type="button" aria-expanded="false" aria-controls="adv">詳細検索<span class="n" id="advN" hidden></span><span class="car">▾</span></button></div>
     <span class="count" id="count"></span>
+  </div>
+  <div class="adv" id="adv" hidden>
+    <div class="arow"><span class="alabel">検索</span><div class="seg" id="modeSeg"><button type="button" data-mode="all">全体検索</button><button type="button" data-mode="kw">キーワード検索</button><button type="button" data-mode="tag">タグ指定</button></div></div>
+    <div class="arow" id="tagRow" hidden><span class="alabel">タグ</span><div class="chips" id="tagChips"></div></div>
+    <div class="arow"><span class="alabel">ソート順</span><select id="sort" aria-label="ソート順"><option value="new">新しい順</option><option value="old">古い順</option><option value="name">名前（昇順）</option><option value="name-desc">名前（降順）</option></select></div>
+    <div class="arow"><span class="alabel">fps</span><select id="fps" aria-label="fps"></select></div>
+    <div class="arow"><span class="alabel">カラー</span><div class="seg" id="colorSeg"><button type="button" data-color="">すべて</button><button type="button" data-color="default">default</button><button type="button" data-color="other">その他</button></div></div>
+    <div class="arow end"><button class="btn" id="advReset" type="button">条件をリセット</button></div>
   </div>
   <div class="grid" id="grid"><p class="empty">読み込み中…</p></div>
 </main>
@@ -130,29 +160,37 @@ const fmtDate = s => { const d = new Date(s); return `${d.getFullYear()}/${d.get
 const IMG_RE = /\.(png|jpe?g|gif|webp|avif)$/i;
 const DEMO = !GITHUB_OWNER || !GITHUB_REPO;
 
-const S = { posts: [], cats: [], cat: 'all', q: '', sort: 'new', bms: new Set() };
+const S = { posts: [], cats: [], cat: 'all', q: '', sort: 'new', bms: new Set(), bmOnly: false, mode: 'all', tags: new Set(), fps: '', color: '' };
+const FPS_LIST = ['240', '120', '60', '30', '20', '15', '10'];
 
 // ----- ブクマ（このブラウザに保存） -----
 const BM_KEY = 'mydon-bookmarks';
 try { S.bms = new Set(JSON.parse(localStorage.getItem(BM_KEY) || '[]')); } catch {}
 function saveBms(){ try { localStorage.setItem(BM_KEY, JSON.stringify([...S.bms])); } catch {} }
 
-// ----- リリース本文から「カテゴリ: ○○」を取り出す -----
+// ----- リリース本文の「カテゴリ: / タグ: / fps: / カラー:」を読む -----
+const META = { cat: /^(?:カテゴリ|category)$/i, tags: /^(?:タグ|tags?)$/i, fps: /^fps$/i, color: /^(?:カラー|色|colou?r)$/i };
 function parseBody(body){
-  let cat = null; const rest = [];
+  const meta = { cat: null, tags: [], fps: null, color: null }; const rest = [];
   for (const line of String(body || '').split(/\r?\n/)) {
-    const m = line.match(/^\s*(?:カテゴリ|category)\s*[:：;；]\s*(.+?)\s*$/i);
-    if (m && !cat) cat = m[1]; else rest.push(line);
+    const m = line.match(/^\s*([^:：;；\s]+)\s*[:：;；]\s*(.*?)\s*$/);
+    const key = m && Object.keys(META).find(k => META[k].test(m[1]));
+    if (!key) { rest.push(line); continue; }
+    const v = m[2];
+    if (key === 'tags') meta.tags.push(...v.split(/[,、，\s]+/).filter(Boolean));
+    else if (v && meta[key] == null) meta[key] = key === 'fps' ? ((v.match(/\d+/) || [null])[0]) : v;
   }
-  return { cat, desc: rest.join('\n').trim() };
+  meta.tags = [...new Set(meta.tags)];
+  return { ...meta, desc: rest.join('\n').trim() };
 }
+const isDefaultColor = p => !p.color || /^(?:default|デフォルト|標準)$/i.test(p.color);
 
 function fromRelease(r){
-  const { cat, desc } = parseBody(r.body);
+  const meta = parseBody(r.body);
   const assets = r.assets || [];
   const isImg = a => (a.content_type || '').startsWith('image/') || IMG_RE.test(a.name);
   return {
-    id: String(r.id), title: r.name || r.tag_name, cat, desc,
+    id: String(r.id), title: r.name || r.tag_name, ...meta,
     date: r.published_at || r.created_at, page: r.html_url,
     images: assets.filter(isImg).map(a => a.browser_download_url),
     files: assets.filter(a => !isImg(a)).map(a => ({ name: a.name, size: a.size, url: a.browser_download_url }))
@@ -197,8 +235,9 @@ function demoPosts(){
     ['お団子屋さん', 'イベント', 330, 3, '三色団子モチーフ。看板の小物も入っています。', [['dango_shop.zip', 45000000], ['dango_extra_parts.zip', 6100000]], 20],
     ['宇宙飛行士', '普段着', 230, 1, '', [['astronaut.zip', 15500000]], 31]
   ];
+  const extra = [[['夏', '和風'], '60', 'default'], [['ゆるい'], '30', '青'], [['段位', '記念'], '120', 'default'], [['和風', '音楽'], '60', '紫'], [['冬'], '60', 'default'], [['和風', '食べ物'], '240', '桃'], [[], '30', 'default']];
   return rows.map(([title, cat, hue, n, desc, files, ago], i) => ({
-    id: 'demo' + i, title, cat, desc, date: new Date(now - ago * day).toISOString(), page: 'https://github.com',
+    id: 'demo' + i, title, cat, desc, tags: extra[i][0], fps: extra[i][1], color: extra[i][2], date: new Date(now - ago * day).toISOString(), page: 'https://github.com',
     images: Array.from({ length: n }, (_, k) => sampleImg(hue, title.slice(0, 8), k)),
     files: files.map(([name, size]) => ({ name, size, url: 'https://github.com' }))
   }));
@@ -213,26 +252,54 @@ function buildCats(){
 }
 
 function renderTabs(){
-  const n = c => c === 'all' ? S.posts.length : c === 'bm' ? S.posts.filter(p => S.bms.has(p.id)).length : c === 'none' ? S.posts.filter(p => !p.cat).length : S.posts.filter(p => p.cat === c).length;
+  const n = c => c === 'all' ? S.posts.length : c === 'none' ? S.posts.filter(p => !p.cat).length : S.posts.filter(p => p.cat === c).length;
   const tabs = [['all', 'すべて'], ...S.cats.map(c => [c, c])];
   if (S.posts.some(p => !p.cat)) tabs.push(['none', 'その他']);
-  tabs.push(['bm', '★ ブクマ']);
   $('#tabs').innerHTML = tabs.map(([id, name]) =>
     `<button class="tab" data-cat="${esc(id)}" aria-pressed="${S.cat === id}">${esc(name)}<small>${n(id)}</small></button>`).join('');
 }
 
+function haystack(p){
+  if (S.mode === 'kw') return p.title + ' ' + p.desc;
+  if (S.mode === 'tag') return p.tags.join(' ');
+  return [p.title, p.desc, p.cat, ...p.tags, ...p.files.map(f => f.name), p.fps ? p.fps + 'fps' : '', p.color].join(' ');
+}
 function visible(){
   let list = S.posts;
-  if (S.cat === 'bm') list = list.filter(p => S.bms.has(p.id));
-  else if (S.cat === 'none') list = list.filter(p => !p.cat);
+  if (S.bmOnly) list = list.filter(p => S.bms.has(p.id));
+  if (S.cat === 'none') list = list.filter(p => !p.cat);
   else if (S.cat !== 'all') list = list.filter(p => p.cat === S.cat);
-  const q = S.q.trim().toLowerCase();
-  if (q) list = list.filter(p => (p.title + ' ' + p.desc).toLowerCase().includes(q));
+  if (S.fps) list = list.filter(p => p.fps === S.fps);
+  if (S.color === 'default') list = list.filter(isDefaultColor);
+  if (S.color === 'other') list = list.filter(p => !isDefaultColor(p));
+  if (S.mode === 'tag' && S.tags.size) list = list.filter(p => [...S.tags].every(t => p.tags.includes(t)));
+  const words = S.q.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (words.length) list = list.filter(p => { const h = haystack(p).toLowerCase(); return words.every(w => h.includes(w)); });
   const sorted = [...list];
   if (S.sort === 'new') sorted.sort((a, b) => b.date.localeCompare(a.date));
   if (S.sort === 'old') sorted.sort((a, b) => a.date.localeCompare(b.date));
   if (S.sort === 'name') sorted.sort((a, b) => a.title.localeCompare(b.title, 'ja'));
+  if (S.sort === 'name-desc') sorted.sort((a, b) => b.title.localeCompare(a.title, 'ja'));
   return sorted;
+}
+
+function renderAdv(){
+  document.querySelectorAll('#modeSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.mode === S.mode));
+  document.querySelectorAll('#colorSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.color === S.color));
+  $('#tagRow').hidden = S.mode !== 'tag';
+  const tagCount = {};
+  for (const p of S.posts) for (const t of p.tags) tagCount[t] = (tagCount[t] || 0) + 1;
+  const tags = Object.keys(tagCount).sort((a, b) => tagCount[b] - tagCount[a] || a.localeCompare(b, 'ja'));
+  $('#tagChips').innerHTML = tags.map(t => `<button type="button" class="tchip" data-tag="${esc(t)}" aria-pressed="${S.tags.has(t)}">${esc(t)}<small>${tagCount[t]}</small></button>`).join('') || '<span class="alabel">まだタグがありません</span>';
+  const fpsCount = {};
+  for (const p of S.posts) if (p.fps) fpsCount[p.fps] = (fpsCount[p.fps] || 0) + 1;
+  const fpsVals = [...new Set([...FPS_LIST, ...Object.keys(fpsCount)])].sort((a, b) => b - a);
+  $('#fps').innerHTML = '<option value="">すべて</option>' + fpsVals.map(v => `<option value="${esc(v)}">${esc(v)}fps（${fpsCount[v] || 0}）</option>`).join('');
+  $('#fps').value = S.fps; $('#sort').value = S.sort;
+  $('#q').placeholder = S.mode === 'kw' ? 'タイトル・説明で検索' : S.mode === 'tag' ? 'タグ名で検索' : '全体から検索';
+  const n = (S.mode !== 'all') + (S.sort !== 'new') + !!S.fps + !!S.color + (S.mode === 'tag' ? S.tags.size : 0);
+  $('#advN').hidden = !n; $('#advN').textContent = n;
+  const bm = $('#bmBtn'); bm.setAttribute('aria-pressed', S.bmOnly); $('#bmCount').textContent = S.posts.filter(p => S.bms.has(p.id)).length;
 }
 
 function renderGrid(){
@@ -243,12 +310,12 @@ function renderGrid(){
       <div class="thumb">${p.images[0] ? `<img loading="lazy" src="${esc(p.images[0])}" alt="">` : ''}
         ${p.images.length > 1 ? `<span class="badge">${p.images.length}枚</span>` : ''}</div>
       <div class="meta"><h3>${esc(p.title)}</h3>
-        <div class="sub">${p.cat ? `<span class="chip">${esc(p.cat)}</span>` : ''}<span>zip ×${p.files.length}</span><span>${fmtDate(p.date)}</span></div></div>
+        <div class="sub">${p.cat ? `<span class="chip">${esc(p.cat)}</span>` : ''}<span>zip ×${p.files.length}</span>${p.fps ? `<span>${esc(p.fps)}fps</span>` : ''}<span>${fmtDate(p.date)}</span></div></div>
       <button class="bm" data-bm="${esc(p.id)}" aria-pressed="${S.bms.has(p.id)}" aria-label="ブクマ">★</button>
-    </div>`).join('') || `<p class="empty">${!S.posts.length ? 'まだ投稿がありません' : S.cat === 'bm' ? 'まだブクマがありません。気になるマイドンの ★ を押すとここに集まります。' : '該当するマイドンがありません'}</p>`;
+    </div>`).join('') || `<p class="empty">${!S.posts.length ? 'まだ投稿がありません' : S.bmOnly && !S.posts.some(p => S.bms.has(p.id)) ? 'まだブクマがありません。気になるマイドンの ★ を押すとここに集まります。' : '該当するマイドンがありません'}</p>`;
 }
 
-function render(){ renderTabs(); renderGrid(); }
+function render(){ renderTabs(); renderAdv(); renderGrid(); }
 
 function toggleBm(id){
   S.bms.has(id) ? S.bms.delete(id) : S.bms.add(id);
@@ -266,7 +333,7 @@ function openDetail(id){
       ${p.images.length > 1 ? '<button class="nav l" id="gl" aria-label="前の画像">‹</button><button class="nav r" id="gr" aria-label="次の画像">›</button>' : ''}</div>
     ${p.images.length > 1 ? `<div class="thumbs">${p.images.map((u, k) => `<button data-k="${k}" aria-current="${k === 0}"><img src="${esc(u)}" alt=""></button>`).join('')}</div>` : ''}
     <h2>${esc(p.title)}</h2>
-    <div class="dmeta">${p.cat ? `<span class="chip">${esc(p.cat)}</span>` : ''}<span>${fmtDate(p.date)}</span></div>
+    <div class="dmeta">${p.cat ? `<span class="chip">${esc(p.cat)}</span>` : ''}${p.tags.map(t => `<span class="chip">#${esc(t)}</span>`).join('')}${p.fps ? `<span>${esc(p.fps)}fps</span>` : ''}${p.color ? `<span>カラー: ${esc(p.color)}</span>` : ''}<span>${fmtDate(p.date)}</span></div>
     ${p.desc ? `<p class="desc">${esc(p.desc)}</p>` : ''}
     <div class="dl">${p.files.map(f => `<div class="frow"><a class="file" href="${esc(f.url)}" target="_blank" rel="noopener"><span>⬇ ${esc(f.name)}</span><small>${fmtSize(f.size)}</small></a><button class="copy" data-copy="${esc(f.url)}" aria-label="${esc(f.name)} のURLをコピー">コピー</button></div>`).join('') || '<p class="count">ダウンロードできるファイルはありません</p>'}</div>
     <button class="btn primary wide" data-dbm="${esc(p.id)}"></button>
@@ -300,7 +367,14 @@ function closeModal(){ $('#modal').hidden = true; $('#mbody').innerHTML = ''; }
 // ----- イベント -----
 $('#tabs').addEventListener('click', e => { const b = e.target.closest('.tab'); if (!b) return; S.cat = b.dataset.cat; render(); });
 $('#q').addEventListener('input', e => { S.q = e.target.value; renderGrid(); });
-$('#sort').addEventListener('change', e => { S.sort = e.target.value; renderGrid(); });
+$('#sort').addEventListener('change', e => { S.sort = e.target.value; renderAdv(); renderGrid(); });
+$('#fps').addEventListener('change', e => { S.fps = e.target.value; renderAdv(); renderGrid(); });
+$('#modeSeg').addEventListener('click', e => { const b = e.target.closest('[data-mode]'); if (!b) return; S.mode = b.dataset.mode; renderAdv(); renderGrid(); });
+$('#colorSeg').addEventListener('click', e => { const b = e.target.closest('[data-color]'); if (!b) return; S.color = b.dataset.color; renderAdv(); renderGrid(); });
+$('#tagChips').addEventListener('click', e => { const b = e.target.closest('[data-tag]'); if (!b) return; const t = b.dataset.tag; S.tags.has(t) ? S.tags.delete(t) : S.tags.add(t); renderAdv(); renderGrid(); });
+$('#advBtn').addEventListener('click', () => { const open = $('#adv').hidden; $('#adv').hidden = !open; $('#advBtn').setAttribute('aria-expanded', open); });
+$('#advReset').addEventListener('click', () => { Object.assign(S, { mode: 'all', sort: 'new', fps: '', color: '' }); S.tags.clear(); renderAdv(); renderGrid(); });
+$('#bmBtn').addEventListener('click', () => { S.bmOnly = !S.bmOnly; renderAdv(); renderGrid(); });
 $('#grid').addEventListener('click', e => {
   const bm = e.target.closest('[data-bm]'); if (bm) { e.stopPropagation(); toggleBm(bm.dataset.bm); return; }
   const c = e.target.closest('.card'); if (c) openDetail(c.dataset.id);
@@ -342,7 +416,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal
     const postUrl = () => {
       const d = new Date(), z = n => String(n).padStart(2, '0');
       const tag = `post-${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`;
-      const q = new URLSearchParams({ tag, body: 'カテゴリ: ' });
+      const q = new URLSearchParams({ tag, body: 'カテゴリ: \nタグ: \nfps: 60\nカラー: default\n' });
       return `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/new?${q}`;
     };
     const link = $('#postLink');
