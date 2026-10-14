@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="theme-color" content="#ffffff">
+<meta name="theme-color" content="#1fa3d6">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>マイドンラボ</title>
 <script>try{var t=localStorage.getItem("mydon-theme");if(t==="light"||t==="dark")document.documentElement.dataset.theme=t;}catch(e){}</script>
@@ -12,24 +12,24 @@
 /* マイドン生成器（ムラサキ）の見た目に合わせたトークン */
 /* 水色基調のトークン */
 :root{
-  --bg:#ffffff; --bagbg:#e3f3fa; --soft:#ffffff; --panel:#ffffff; --ink:#16303d; --muted:#5f7f8e; --line:#c9e3ee;
+  --bg:#ffffff; --head:#1fa3d6; --head-ink:#ffffff; --head-line:#1893c3; --bagbg:#e3f3fa; --soft:#ffffff; --panel:#ffffff; --ink:#16303d; --muted:#5f7f8e; --line:#c9e3ee;
   --accent:#1fa3d6; --accent-ink:#ffffff; --strong:#1fa3d6; --on-bg:#5f7f8e; --on-bg-tab:#5f7f8e; --gold:#e0a400;
   --check-a:rgba(31,163,214,.08); --tab-off:#f1f8fb; --badge-bg:rgba(10,40,55,.62); --scrim:rgba(8,30,42,.55);
   --f-body:"Segoe UI","Yu Gothic UI","Meiryo","Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans CJK JP",sans-serif;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#16262f; --bagbg:#0f1c23; --soft:#16262f; --panel:#16262f; --ink:#e3f2f8; --muted:#8eacb9; --line:#25404d; --accent:#4cc3ee; --accent-ink:#06202b; --strong:#4cc3ee; --on-bg:#8eacb9; --on-bg-tab:#8eacb9;
+  --bg:#16262f; --head:#0f4a62; --head-ink:#e3f2f8; --head-line:#13586f; --bagbg:#0f1c23; --soft:#16262f; --panel:#16262f; --ink:#e3f2f8; --muted:#8eacb9; --line:#25404d; --accent:#4cc3ee; --accent-ink:#06202b; --strong:#4cc3ee; --on-bg:#8eacb9; --on-bg-tab:#8eacb9;
   --gold:#f0b429; --check-a:rgba(76,195,238,.07); --tab-off:#122129; color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#16262f; --bagbg:#0f1c23; --soft:#16262f; --panel:#16262f; --ink:#e3f2f8; --muted:#8eacb9; --line:#25404d; --accent:#4cc3ee; --accent-ink:#06202b; --strong:#4cc3ee; --on-bg:#8eacb9; --on-bg-tab:#8eacb9;
+  --bg:#16262f; --head:#0f4a62; --head-ink:#e3f2f8; --head-line:#13586f; --bagbg:#0f1c23; --soft:#16262f; --panel:#16262f; --ink:#e3f2f8; --muted:#8eacb9; --line:#25404d; --accent:#4cc3ee; --accent-ink:#06202b; --strong:#4cc3ee; --on-bg:#8eacb9; --on-bg-tab:#8eacb9;
   --gold:#f0b429; --check-a:rgba(76,195,238,.07); --tab-off:#122129; color-scheme:dark}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.5 var(--f-body)}
 a{color:inherit}
-.topbar{flex-wrap:wrap;position:sticky;top:env(safe-area-inset-top,0px);z-index:10;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 14px;background:var(--panel);border-bottom:1px solid var(--line)}
+.topbar{flex-wrap:wrap;position:sticky;top:env(safe-area-inset-top,0px);z-index:10;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 14px;background:var(--head);color:var(--head-ink);border-bottom:1px solid var(--head-line)}
 .brand{display:flex;align-items:center;gap:10px;text-decoration:none;min-width:0}
-.brand b{white-space:nowrap;font-size:14px}
+.brand b{white-space:nowrap;font-size:15px;color:var(--head-ink)}
 .brand small{display:block;color:var(--muted);font-size:11px}
 .logo{width:32px;height:32px;display:block;flex:none}
 .top-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex:1 1 280px;min-width:0}
