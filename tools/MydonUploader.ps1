@@ -52,9 +52,41 @@ function Save-Token([string]$t) {
 $script:http = New-Object System.Net.Http.HttpClient
 $script:http.Timeout = [TimeSpan]::FromHours(12)
 
-function Wait-Task($task) {
-    while (-not $task.IsCompleted) { [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 40 }
+function Wait-Task($task, [int]$timeoutSec = 0) {
+    $sw = [Diagnostics.Stopwatch]::StartNew()
+    while (-not $task.IsCompleted) {
+        [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 40
+        if ($timeoutSec -gt 0 -and $sw.Elapsed.TotalSeconds -gt $timeoutSec) { throw "通信が $timeoutSec 秒止まったので、あきらめました。" }
+    }
     return $task.GetAwaiter().GetResult()
+}
+
+# 画面を固めずにストリームをコピーする（途中で画面を動かしたり、最小化から戻したりできる）
+function Copy-StreamUI($src, $dst, [string]$label, [long]$total = -1, [int]$stallSec = 0) {
+    $buf = New-Object byte[] 1048576
+    $done = [long]0; $tick = [Diagnostics.Stopwatch]::StartNew()
+    while ($true) {
+        $n = if ($stallSec -gt 0) { Wait-Task ($src.ReadAsync($buf, 0, $buf.Length)) $stallSec } else { $src.Read($buf, 0, $buf.Length) }
+        if ($n -le 0) { break }
+        $dst.Write($buf, 0, $n)
+        $done += $n
+        if ($tick.ElapsedMilliseconds -gt 150) {
+            if ($label -and $lblStatus) {
+                $lblStatus.Text = if ($total -gt 0) { "$label（$(Format-Size $done) / $(Format-Size $total)）" } else { "$label（$(Format-Size $done)）" }
+            }
+            [System.Windows.Forms.Application]::DoEvents(); $tick.Restart()
+        }
+    }
+}
+
+# メッセージは必ずツールの画面の上に出す（後ろに隠れて操作できなくなるのを防ぐ）
+function Show-Msg([string]$text, [string]$buttons = 'OK') {
+    if ($form -and -not $form.IsDisposed) {
+        if ($form.WindowState -eq 'Minimized') { $form.WindowState = 'Normal' }
+        $form.Activate()
+        return [System.Windows.Forms.MessageBox]::Show($form, $text, 'マイドンラボ', $buttons)
+    }
+    return [System.Windows.Forms.MessageBox]::Show($text, 'マイドンラボ', $buttons)
 }
 function New-GhRequest([string]$method, [string]$url) {
     $req = New-Object System.Net.Http.HttpRequestMessage ((New-Object System.Net.Http.HttpMethod $method), $url)
@@ -235,8 +267,8 @@ function Invoke-Merge($rels, [string]$title, [string]$cat, [bool]$deleteOld) {
 }
 
 function Show-MergeDialog {
-    if (-not $script:token) { [System.Windows.Forms.MessageBox]::Show('先に「トークン設定」をして下さい。', 'マイドンラボ') | Out-Null; return }
-    if ($script:releases.Count -lt 2) { [System.Windows.Forms.MessageBox]::Show('まとめられる小分類が2つ以上ありません。↻ で読み込み直して下さい。', 'マイドンラボ') | Out-Null; return }
+    if (-not $script:token) { (Show-Msg ('先に「トークン設定」をして下さい。')) | Out-Null; return }
+    if ($script:releases.Count -lt 2) { (Show-Msg ('まとめられる小分類が2つ以上ありません。↻ で読み込み直して下さい。')) | Out-Null; return }
     $d = New-Object System.Windows.Forms.Form
     $d.Text = '小分類をまとめる'; $d.Font = $font; $d.ClientSize = (New-Object System.Drawing.Size (460, 430))
     $d.StartPosition = 'CenterParent'; $d.FormBorderStyle = 'FixedDialog'; $d.MaximizeBox = $false; $d.MinimizeBox = $false
@@ -256,8 +288,8 @@ function Show-MergeDialog {
         if ($e.NewValue -eq [System.Windows.Forms.CheckState]::Checked -and -not $tTitle.Text) { $tTitle.Text = [string]$script:releases[$e.Index].name }
     })
     $ok.Add_Click({
-        if ($clb.CheckedIndices.Count -lt 2) { [System.Windows.Forms.MessageBox]::Show('2つ以上チェックして下さい。', 'マイドンラボ') | Out-Null; return }
-        if (-not $tTitle.Text.Trim()) { [System.Windows.Forms.MessageBox]::Show('まとめた後の名前を入れて下さい。', 'マイドンラボ') | Out-Null; return }
+        if ($clb.CheckedIndices.Count -lt 2) { (Show-Msg ('2つ以上チェックして下さい。')) | Out-Null; return }
+        if (-not $tTitle.Text.Trim()) { (Show-Msg ('まとめた後の名前を入れて下さい。')) | Out-Null; return }
         $d.DialogResult = 'OK'; $d.Close()
     })
     if ($d.ShowDialog($form) -ne 'OK') { return }
@@ -269,7 +301,7 @@ function Show-MergeDialog {
         Load-Releases
     } catch {
         $lblStatus.Text = 'エラー：' + $_.Exception.Message
-        [System.Windows.Forms.MessageBox]::Show("まとめる途中で止まりました。`n`n$($_.Exception.Message)`n`n元の小分類はまだ消していません。まとめ先に途中まで上がったファイルがあれば、GitHub で削除して下さい。", 'マイドンラボ') | Out-Null
+        (Show-Msg ("まとめる途中で止まりました。`n`n$($_.Exception.Message)`n`n元の小分類はまだ消していません。まとめ先に途中まで上がったファイルがあれば、GitHub で削除して下さい。")) | Out-Null
     } finally { $btnPost.Enabled = $true; $btnMerge.Enabled = $true }
 }
 
@@ -308,16 +340,17 @@ function Save-HttpResponse($res, [string]$dir, [string]$fallbackName) {
     $name = Get-ResponseFileName $res $fallbackName
     $name = ($name -replace '[\\/:*?"<>|]', '_')
     $path = Join-Path $dir $name
-    $src = Wait-Task ($res.Content.ReadAsStreamAsync())
+    $src = Wait-Task ($res.Content.ReadAsStreamAsync()) 120
+    $len = if ($res.Content.Headers.ContentLength) { [long]$res.Content.Headers.ContentLength } else { -1 }
     $fs = [IO.File]::Create($path)
-    try { Wait-Task ($src.CopyToAsync($fs, 1048576)) | Out-Null } finally { $fs.Dispose(); $src.Dispose() }
+    try { Copy-StreamUI $src $fs "ダウンロード中… $name" $len 180 } finally { $fs.Dispose(); $src.Dispose() }
     return $path
 }
 
 function Get-Http([string]$url, [string]$referer) {
     $req = New-Object System.Net.Http.HttpRequestMessage ([System.Net.Http.HttpMethod]::Get, $url)
     if ($referer) { $req.Headers.Referrer = [Uri]$referer }
-    $res = Wait-Task ($script:gfHttp.SendAsync($req, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead))
+    $res = Wait-Task ($script:gfHttp.SendAsync($req, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead)) 180
     if (-not $res.IsSuccessStatusCode) { throw "ダウンロードできませんでした（$([int]$res.StatusCode)）：$url" }
     return $res
 }
@@ -377,7 +410,8 @@ function Get-RootThumb($zip, [string]$root, [string]$dir) {
     $normal = @($imgs | Where-Object { ($_.FullName -replace '\\', '/') -match '(^|/)normal/' } | Sort-Object $num, Name)
     $e = if ($broke.Count) { $broke[-1] } elseif ($normal.Count) { $normal[0] } else { $imgs[0] }
     $out = Join-Path $dir ([guid]::NewGuid().ToString('N') + [IO.Path]::GetExtension($e.Name))
-    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($e, $out, $true)
+    $src = $e.Open(); $dst = [IO.File]::Create($out)
+    try { Copy-StreamUI $src $dst '' } finally { $dst.Dispose(); $src.Dispose() }
     return $out
 }
 
@@ -408,11 +442,11 @@ function Split-Download([string]$path, [string]$dir, [string[]]$thumbs) {
                 foreach ($e in $zip.Entries) {
                     $full = $e.FullName -replace '\\', '/'
                     if (-not ($full -eq $root -or $full.StartsWith($root + '/'))) { continue }
-                    $ne = $za.CreateEntry($full, [System.IO.Compression.CompressionLevel]::Optimal)
+                    $ne = $za.CreateEntry($full, [System.IO.Compression.CompressionLevel]::Fastest)
                     $ne.LastWriteTime = $e.LastWriteTime
                     if ($full.EndsWith('/')) { continue }
                     $src = $e.Open(); $dst = $ne.Open()
-                    try { $src.CopyTo($dst) } finally { $dst.Dispose(); $src.Dispose() }
+                    try { Copy-StreamUI $src $dst "「$name」を分けています…" } finally { $dst.Dispose(); $src.Dispose() }
                 }
             } finally { $za.Dispose(); $fs.Dispose() }
             $th = @()
@@ -468,7 +502,12 @@ function Invoke-Batch([string]$csvPath) {
                 $work = Join-Path $tmp ([guid]::NewGuid().ToString('N')); New-Item -ItemType Directory -Path $work | Out-Null
                 try {
                     $lblStatus.Text = "ダウンロード中… $link"
-                    $files = if (Test-Path -LiteralPath $link -PathType Leaf) { @((Copy-Item -LiteralPath $link -Destination $work -PassThru).FullName) } else { @(Get-LinkFiles $link $work) }
+                    $files = if (Test-Path -LiteralPath $link -PathType Leaf) {
+                        $dstPath = Join-Path $work ([IO.Path]::GetFileName($link))
+                        $src = [IO.File]::OpenRead($link); $dst = [IO.File]::Create($dstPath)
+                        try { Copy-StreamUI $src $dst "コピー中… $([IO.Path]::GetFileName($link))" $src.Length } finally { $dst.Dispose(); $src.Dispose() }
+                        @($dstPath)
+                    } else { @(Get-LinkFiles $link $work) }
                     $thumbs = @(([string]$row.'サムネ') -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ -and (Test-Path $_) })
                     $items = @()
                     foreach ($f in $files) { $items += Split-Download $f $work $thumbs }
@@ -514,24 +553,24 @@ function Invoke-Batch([string]$csvPath) {
 }
 
 function Start-Batch {
-    if (-not $script:token) { [System.Windows.Forms.MessageBox]::Show('先に「トークン設定」をして下さい。', 'マイドンラボ') | Out-Null; return }
+    if (-not $script:token) { (Show-Msg ('先に「トークン設定」をして下さい。')) | Out-Null; return }
     $dlg = New-Object System.Windows.Forms.OpenFileDialog
     $dlg.Title = '一括投稿の一覧ファイル（CSV）を選んで下さい'
     $dlg.Filter = 'CSV (*.csv)|*.csv'
     if ($dlg.ShowDialog() -ne 'OK') { return }
     $count = @(Import-Csv -Path $dlg.FileName -Encoding UTF8 | Where-Object { $_.'リンク' }).Count
-    $ans = [System.Windows.Forms.MessageBox]::Show("$count 件のリンクを、ダウンロードして投稿します。`n時間がかかるので、終わるまでツールを閉じないで下さい。`n`n始めますか？", 'マイドンラボ', 'YesNo')
+    $ans = (Show-Msg ("$count 件のリンクを、ダウンロードして投稿します。`n時間がかかるので、終わるまでツールを閉じないで下さい。`n`n始めますか？") 'YesNo')
     if ($ans -ne 'Yes') { return }
     $btnPost.Enabled = $false; $btnMerge.Enabled = $false; $btnBatch.Enabled = $false
     try {
         if (-not $script:releases.Count) { Load-Releases }
         $r = Invoke-Batch $dlg.FileName
         $lblStatus.Text = "一括投稿が終わりました：成功 $($r.Ok) 体 / 被り $($r.Skip) 体 / 失敗 $($r.Fail) 件"
-        [System.Windows.Forms.MessageBox]::Show("終わりました！`n成功：$($r.Ok) 体`n被りで飛ばした：$($r.Skip) 体`n失敗：$($r.Fail) 件`n`n結果はこのファイルにまとめました：`n$($r.Log)", 'マイドンラボ') | Out-Null
+        (Show-Msg ("終わりました！`n成功：$($r.Ok) 体`n被りで飛ばした：$($r.Skip) 体`n失敗：$($r.Fail) 件`n`n結果はこのファイルにまとめました：`n$($r.Log)")) | Out-Null
         Load-Releases
     } catch {
         $lblStatus.Text = 'エラー：' + $_.Exception.Message
-        [System.Windows.Forms.MessageBox]::Show("止まりました。`n`n$($_.Exception.Message)", 'マイドンラボ') | Out-Null
+        (Show-Msg ("止まりました。`n`n$($_.Exception.Message)")) | Out-Null
     } finally { $btnPost.Enabled = $true; $btnMerge.Enabled = $true; $btnBatch.Enabled = $true }
 }
 
@@ -686,7 +725,7 @@ $btnToken.Add_Click({
     $msg = "GitHub のトークンを貼り付けて下さい。`n（Fine-grained token／リポジトリ $Repo／Contents: Read and write）`n`nこのPCの、このユーザーだけが読める形で保存されます。"
     $t = [Microsoft.VisualBasic.Interaction]::InputBox($msg, 'トークン設定', '')
     if ($t.Trim()) {
-        try { Save-Token $t.Trim() } catch { [System.Windows.Forms.MessageBox]::Show($_.Exception.Message, 'マイドンラボ') | Out-Null }
+        try { Save-Token $t.Trim() } catch { (Show-Msg ($_.Exception.Message)) | Out-Null }
         $script:token = $t.Trim(); Update-TokenLabel; Load-Releases
     }
 })
@@ -716,7 +755,7 @@ $list.Add_DragDrop({
     $files = @($_.Data.GetData([System.Windows.Forms.DataFormats]::FileDrop))
     $imgs = @($files | Where-Object { $ImageExt -contains [IO.Path]::GetExtension($_).ToLower() })
     $zips = @($files | Where-Object { $ImageExt -notcontains [IO.Path]::GetExtension($_).ToLower() })
-    if (-not $zips.Count) { [System.Windows.Forms.MessageBox]::Show('zip が入っていません。画像と zip を一緒にドロップして下さい。', 'マイドンラボ') | Out-Null; return }
+    if (-not $zips.Count) { (Show-Msg ('zip が入っていません。画像と zip を一緒にドロップして下さい。')) | Out-Null; return }
     # 同じ名前の画像と zip をペアにする。ペアにならない時は全部で1体
     $groups = [ordered]@{}
     foreach ($z in $zips) { $k = [IO.Path]::GetFileNameWithoutExtension($z).ToLower(); if (-not $groups.Contains($k)) { $groups[$k] = @{ Name = [IO.Path]::GetFileNameWithoutExtension($z); Images = @(); Zips = @() } }; $groups[$k].Zips += $z }
@@ -743,13 +782,13 @@ $btnDelM.Add_Click({
 })
 
 $btnPost.Add_Click({
-    if (-not $script:token) { [System.Windows.Forms.MessageBox]::Show('先に「トークン設定」をして下さい。', 'マイドンラボ') | Out-Null; return }
-    if (-not $script:mydons.Count) { [System.Windows.Forms.MessageBox]::Show('マイドンを1体以上追加して下さい。', 'マイドンラボ') | Out-Null; return }
-    if ($rbNew.Checked -and -not $txtTitle.Text.Trim()) { [System.Windows.Forms.MessageBox]::Show('小分類の名前を入れて下さい。', 'マイドンラボ') | Out-Null; return }
-    if ($rbAdd.Checked -and $cbExisting.SelectedIndex -lt 0) { [System.Windows.Forms.MessageBox]::Show('追加する小分類を選んで下さい。', 'マイドンラボ') | Out-Null; return }
+    if (-not $script:token) { (Show-Msg ('先に「トークン設定」をして下さい。')) | Out-Null; return }
+    if (-not $script:mydons.Count) { (Show-Msg ('マイドンを1体以上追加して下さい。')) | Out-Null; return }
+    if ($rbNew.Checked -and -not $txtTitle.Text.Trim()) { (Show-Msg ('小分類の名前を入れて下さい。')) | Out-Null; return }
+    if ($rbAdd.Checked -and $cbExisting.SelectedIndex -lt 0) { (Show-Msg ('追加する小分類を選んで下さい。')) | Out-Null; return }
     $noImg = @($script:mydons | Where-Object { -not $_.Images.Count })
     if ($noImg.Count) {
-        $ans = [System.Windows.Forms.MessageBox]::Show("画像のないマイドンがあります（$($noImg[0].Name) など）。このまま投稿しますか？", 'マイドンラボ', 'YesNo')
+        $ans = (Show-Msg ("画像のないマイドンがあります（$($noImg[0].Name) など）。このまま投稿しますか？") 'YesNo')
         if ($ans -ne 'Yes') { return }
     }
 
@@ -810,7 +849,7 @@ $btnPost.Add_Click({
         Load-Releases
     } catch {
         $lblStatus.Text = 'エラー：' + $_.Exception.Message
-        [System.Windows.Forms.MessageBox]::Show("投稿できませんでした。`n`n$($_.Exception.Message)`n`n途中まで上がった分は、GitHub の Releases に「下書き（Draft）」として残っています。不要なら削除して下さい。", 'マイドンラボ') | Out-Null
+        (Show-Msg ("投稿できませんでした。`n`n$($_.Exception.Message)`n`n途中まで上がった分は、GitHub の Releases に「下書き（Draft）」として残っています。不要なら削除して下さい。")) | Out-Null
     } finally {
         $btnPost.Enabled = $true
     }
