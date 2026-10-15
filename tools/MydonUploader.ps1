@@ -389,7 +389,11 @@ function Split-Download([string]$path, [string]$dir, [string[]]$thumbs) {
     }
     try {
         $roots = @(Get-MydonRoots $zip)
-        if ($roots.Count -le 1) { return @([pscustomobject]@{ Name = $stem; Zip = $path; Thumbs = $thumbs; Note = '' }) }
+        if ($roots.Count -le 1) {
+            $th = @($thumbs)
+            if (-not $th.Count) { $root = if ($roots.Count) { $roots[0] } else { '' }; $t = Get-RootThumb $zip $root $dir; if ($t) { $th = @($t) } }
+            return @([pscustomobject]@{ Name = $stem; Zip = $path; Thumbs = $th; Note = $(if ($thumbs.Count) { '' } else { 'サムネはzipの中の画像から作りました' }) })
+        }
         $items = @()
         $i = 0
         foreach ($root in ($roots | Sort-Object)) {
