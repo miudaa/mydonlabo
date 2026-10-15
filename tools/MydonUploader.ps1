@@ -155,9 +155,151 @@ function Save-AssetTo($asset, [string]$path) {
         $res = Wait-Task ($script:httpPlain.GetAsync($res.Headers.Location, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead))
     }
     if (-not $res.IsSuccessStatusCode) { throw "$($asset.name) をダウンロードできませんでした（$([int]$res.StatusCode)）" }
-    $src = Wait-Task ($res.Content.ReadAsStreamAsync())
+    $src = Wait-Task ($res.Content.ReadAsStreamAsync()) 120
     $fs = [IO.File]::Create($path)
-    try { Wait-Task ($src.CopyToAsync($fs)) | Out-Null } finally { $fs.Dispose(); $src.Dispose() }
+    try { Copy-StreamUI $src $fs "ダウンロード中… $($asset.name)" ([long]$asset.size) 180 } finally { $fs.Dispose(); $src.Dispose() }
+}
+
+# 1体分の添付を、別のリリースに m番号を付け直して上げる。上げたファイル名の一覧を返す
+function Copy-ItemTo($item, $destId, [string]$id, [string]$tmp) {
+    $k = 0
+    foreach ($a in @($item.Images) + @($item.Files)) {
+        $isImg = $ImageExt -contains [IO.Path]::GetExtension($a.name).ToLower()
+        if ($isImg) { $k++ }
+        $ext = [IO.Path]::GetExtension($a.name).ToLower(); if (-not $ext) { $ext = '.zip' }
+        $idx = if ($isImg) { $k } else { [array]::IndexOf(@($item.Files), $a) + 1 }
+        $fname = if ($idx -le 1) { "$id$ext" } else { "${id}_$idx$ext" }
+        $local = Join-Path $tmp ([guid]::NewGuid().ToString('N') + $ext)
+        Save-AssetTo $a $local
+        if ($progress.Value -lt $progress.Maximum) { $progress.Value++ }
+        $lblStatus.Text = "「$($item.Name)」をアップロード中… $fname（$(Format-Size $a.size)）"
+        Send-Asset $destId $local $fname
+        if ($progress.Value -lt $progress.Maximum) { $progress.Value++ }
+        Remove-Item $local -Force -ErrorAction SilentlyContinue
+    }
+}
+
+# 選んだマイドンを別の小分類へ移す。$dest が $null なら新しい小分類（$newCat / $newTitle）を作る
+function Invoke-Move($srcRel, [string[]]$stems, $dest, [string]$newCat, [string]$newTitle, [bool]$deleteEmpty) {
+    $src = Invoke-Gh 'GET' "/releases/$($srcRel.id)" $null
+    $items = @(Get-ReleaseItems $src | Where-Object { $stems -contains $_.Stem })
+    if (-not $items.Count) { throw '移すマイドンが見つかりませんでした。↻ で読み込み直して下さい。' }
+    $created = $false
+    if ($dest) {
+        $target = Invoke-Gh 'GET' "/releases/$($dest.id)" $null
+    } else {
+        # 新しい小分類：元の本文の設定（fps やカラーなど）を引き継ぐ
+        $meta = (@(([string]$src.body) -split "`r?`n") | Where-Object { $_ -notmatch '^\s*名前\s+\S+\s*[:：]' }) -join "`n"
+        $meta = Set-BodyCategory $meta.TrimEnd() $newCat
+        $tag = 'post-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + ([guid]::NewGuid().ToString('N').Substring(0, 4))
+        $target = Invoke-Gh 'POST' '/releases' @{ tag_name = $tag; name = $newTitle; body = $meta; draft = $true }
+        $created = $true
+    }
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) ('MydonLaboMove_' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+    try {
+        $nums = @($target.assets | ForEach-Object { if ($_.name -match '^m(\d+)') { [int]$Matches[1] } })
+        $n = if ($nums.Count) { [int](($nums | Measure-Object -Maximum).Maximum) + 1 } else { 1 }
+        $total = 0; foreach ($it in $items) { $total += $it.Images.Count + $it.Files.Count }
+        $progress.Maximum = [Math]::Max(1, $total * 2); $progress.Value = 0
+        $nameLines = New-Object System.Collections.Generic.List[string]
+        try {
+            foreach ($it in $items) {
+                $id = 'm{0:D2}' -f $n; $n++
+                Copy-ItemTo $it $target.id $id $tmp
+                $nameLines.Add("名前 ${id}: $($it.Name)")
+            }
+        } catch {
+            if ($created) { try { Invoke-Gh 'DELETE' "/releases/$($target.id)" $null | Out-Null } catch { } }
+            throw
+        }
+        $lblStatus.Text = '仕上げ中…'
+        $body = ([string]$target.body).TrimEnd() + "`n" + ($nameLines -join "`n")
+        Invoke-Gh 'PATCH' "/releases/$($target.id)" @{ body = $body; draft = $false } | Out-Null
+
+        # 移し終わってから、元の小分類から消す
+        $lblStatus.Text = '元の小分類から消しています…'
+        foreach ($it in $items) { foreach ($a in @($it.Images) + @($it.Files)) { Invoke-Gh 'DELETE' "/releases/assets/$($a.id)" $null | Out-Null } }
+        $movedIds = @($items | ForEach-Object { @($_.Images) + @($_.Files) } | ForEach-Object { $_.id })
+        $left = @($src.assets | Where-Object { $movedIds -notcontains $_.id })
+        if (-not $left.Count -and $deleteEmpty) {
+            Invoke-Gh 'DELETE' "/releases/$($src.id)" $null | Out-Null
+            try { Invoke-Gh 'DELETE' ('/git/refs/tags/' + [Uri]::EscapeDataString($src.tag_name)) $null | Out-Null } catch { }
+        } else {
+            $drop = @($items | ForEach-Object { $_.Stem } | Where-Object { $_ })
+            $lines = @(([string]$src.body) -split "`r?`n") | Where-Object { -not ($_ -match '^\s*名前\s+(\S+?)\s*[:：]' -and $drop -contains $Matches[1].ToLower()) }
+            Invoke-Gh 'PATCH' "/releases/$($src.id)" @{ body = ($lines -join "`n") } | Out-Null
+        }
+        return [pscustomobject]@{ Count = $items.Count; Title = [string]$target.name }
+    } finally {
+        Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Show-MoveDialog {
+    if (-not $script:token) { (Show-Msg ('先に「トークン設定」をして下さい。')) | Out-Null; return }
+    if (-not $script:releases.Count) { Load-Releases }
+    if (-not $script:releases.Count) { (Show-Msg ('小分類がまだありません。')) | Out-Null; return }
+    $P = { param($x, $y) New-Object System.Drawing.Point ($x, $y) }
+    $S = { param($w, $h) New-Object System.Drawing.Size ($w, $h) }
+    $d = New-Object System.Windows.Forms.Form
+    $d.Text = 'マイドンを移動'; $d.Font = $font; $d.ClientSize = (& $S 460 560)
+    $d.StartPosition = 'CenterParent'; $d.FormBorderStyle = 'FixedDialog'; $d.MaximizeBox = $false; $d.MinimizeBox = $false
+    $l1 = New-Object System.Windows.Forms.Label; $l1.Text = '移動元の小分類'; $l1.Location = (& $P 14 12); $l1.Size = (& $S 432 22); $d.Controls.Add($l1)
+    $cSrc = New-Object System.Windows.Forms.ComboBox; $cSrc.DropDownStyle = 'DropDownList'; $cSrc.Location = (& $P 14 36); $cSrc.Size = (& $S 432 26); $d.Controls.Add($cSrc)
+    foreach ($item in $cbExisting.Items) { [void]$cSrc.Items.Add($item) }
+    $l2 = New-Object System.Windows.Forms.Label; $l2.Text = '移すマイドンにチェック'; $l2.Location = (& $P 14 72); $l2.Size = (& $S 300 22); $d.Controls.Add($l2)
+    $bAll = New-Object System.Windows.Forms.Button; $bAll.Text = '全部'; $bAll.Location = (& $P 316 68); $bAll.Size = (& $S 64 26); $d.Controls.Add($bAll)
+    $bNone = New-Object System.Windows.Forms.Button; $bNone.Text = '外す'; $bNone.Location = (& $P 382 68); $bNone.Size = (& $S 64 26); $d.Controls.Add($bNone)
+    $clb = New-Object System.Windows.Forms.CheckedListBox; $clb.Location = (& $P 14 98); $clb.Size = (& $S 432 200); $clb.CheckOnClick = $true; $d.Controls.Add($clb)
+    $rExist = New-Object System.Windows.Forms.RadioButton; $rExist.Text = '今ある小分類へ'; $rExist.Checked = $true; $rExist.Location = (& $P 14 310); $rExist.Size = (& $S 432 24); $d.Controls.Add($rExist)
+    $cDst = New-Object System.Windows.Forms.ComboBox; $cDst.DropDownStyle = 'DropDownList'; $cDst.Location = (& $P 34 336); $cDst.Size = (& $S 412 26); $d.Controls.Add($cDst)
+    foreach ($item in $cbExisting.Items) { [void]$cDst.Items.Add($item) }
+    $rNew = New-Object System.Windows.Forms.RadioButton; $rNew.Text = '新しい小分類を作る'; $rNew.Location = (& $P 14 372); $rNew.Size = (& $S 432 24); $d.Controls.Add($rNew)
+    $l3 = New-Object System.Windows.Forms.Label; $l3.Text = '大分類'; $l3.Location = (& $P 34 402); $l3.Size = (& $S 90 22); $d.Controls.Add($l3)
+    $cCat = New-Object System.Windows.Forms.ComboBox; $cCat.Location = (& $P 126 398); $cCat.Size = (& $S 320 26); $d.Controls.Add($cCat)
+    foreach ($c in $cbCat.Items) { [void]$cCat.Items.Add($c) }
+    $l4 = New-Object System.Windows.Forms.Label; $l4.Text = '小分類の名前'; $l4.Location = (& $P 34 436); $l4.Size = (& $S 90 22); $d.Controls.Add($l4)
+    $tTitle = New-Object System.Windows.Forms.TextBox; $tTitle.Location = (& $P 126 432); $tTitle.Size = (& $S 320 26); $d.Controls.Add($tTitle)
+    $chk = New-Object System.Windows.Forms.CheckBox; $chk.Text = '移動元が空になったら、その小分類を削除する'; $chk.Checked = $true; $chk.Location = (& $P 14 474); $chk.Size = (& $S 432 24); $d.Controls.Add($chk)
+    $ok = New-Object System.Windows.Forms.Button; $ok.Text = '移動する'; $ok.Location = (& $P 254 516); $ok.Size = (& $S 92 30); $d.Controls.Add($ok)
+    $cancel = New-Object System.Windows.Forms.Button; $cancel.Text = 'やめる'; $cancel.Location = (& $P 354 516); $cancel.Size = (& $S 92 30); $cancel.DialogResult = 'Cancel'; $d.Controls.Add($cancel)
+    $d.CancelButton = $cancel
+    $script:moveItems = @()
+    $syncDst = { $cDst.Enabled = $rExist.Checked; $cCat.Enabled = $rNew.Checked; $tTitle.Enabled = $rNew.Checked }
+    $rExist.Add_CheckedChanged($syncDst); $rNew.Add_CheckedChanged($syncDst); & $syncDst
+    $cSrc.Add_SelectedIndexChanged({
+        $clb.Items.Clear()
+        $script:moveItems = @(Get-ReleaseItems $script:releases[$cSrc.SelectedIndex])
+        foreach ($it in $script:moveItems) { [void]$clb.Items.Add($it.Name) }
+        $c = ''; foreach ($line in (([string]$script:releases[$cSrc.SelectedIndex].body) -split "`r?`n")) { if ($line -match '^\s*(カテゴリ|category)\s*[:：;；]\s*(.+?)\s*$') { $c = $Matches[2]; break } }
+        if (-not $cCat.Text) { $cCat.Text = $c }
+    })
+    $bAll.Add_Click({ for ($i = 0; $i -lt $clb.Items.Count; $i++) { $clb.SetItemChecked($i, $true) } })
+    $bNone.Add_Click({ for ($i = 0; $i -lt $clb.Items.Count; $i++) { $clb.SetItemChecked($i, $false) } })
+    $ok.Add_Click({
+        if ($cSrc.SelectedIndex -lt 0) { (Show-Msg ('移動元の小分類を選んで下さい。')) | Out-Null; return }
+        if ($clb.CheckedIndices.Count -lt 1) { (Show-Msg ('移すマイドンを1体以上チェックして下さい。')) | Out-Null; return }
+        if ($rExist.Checked -and $cDst.SelectedIndex -lt 0) { (Show-Msg ('移動先の小分類を選んで下さい。')) | Out-Null; return }
+        if ($rExist.Checked -and $cDst.SelectedIndex -eq $cSrc.SelectedIndex) { (Show-Msg ('移動元と移動先が同じです。')) | Out-Null; return }
+        if ($rNew.Checked -and -not $tTitle.Text.Trim()) { (Show-Msg ('新しい小分類の名前を入れて下さい。')) | Out-Null; return }
+        if ($rNew.Checked -and -not $cCat.Text.Trim()) { (Show-Msg ('大分類を入れて下さい。')) | Out-Null; return }
+        $d.DialogResult = 'OK'; $d.Close()
+    })
+    if ($cbExisting.SelectedIndex -ge 0) { $cSrc.SelectedIndex = $cbExisting.SelectedIndex } else { $cSrc.SelectedIndex = 0 }
+    if ($d.ShowDialog($form) -ne 'OK') { return }
+    $srcRel = $script:releases[$cSrc.SelectedIndex]
+    $stems = @($clb.CheckedIndices | ForEach-Object { $script:moveItems[$_].Stem })
+    $dest = if ($rExist.Checked) { $script:releases[$cDst.SelectedIndex] } else { $null }
+    $btnPost.Enabled = $false; $btnMerge.Enabled = $false; $btnMove.Enabled = $false; $btnBatch.Enabled = $false
+    try {
+        $r = Invoke-Move $srcRel $stems $dest $cCat.Text.Trim() $tTitle.Text.Trim() $chk.Checked
+        $lblStatus.Text = "移動しました！「$($r.Title)」に $($r.Count) 体を移しました。サイトを再読み込みすると出ます。"
+        Load-Releases
+    } catch {
+        $lblStatus.Text = 'エラー：' + $_.Exception.Message
+        (Show-Msg ("移動の途中で止まりました。`n`n$($_.Exception.Message)`n`n移動元からはまだ消していません。移動先に途中まで上がったファイルがあれば、GitHub で削除して下さい。")) | Out-Null
+    } finally { $btnPost.Enabled = $true; $btnMerge.Enabled = $true; $btnMove.Enabled = $true; $btnBatch.Enabled = $true }
 }
 
 function Get-BodyNames([string]$body) {
@@ -561,7 +703,7 @@ function Start-Batch {
     $count = @(Import-Csv -Path $dlg.FileName -Encoding UTF8 | Where-Object { $_.'リンク' }).Count
     $ans = (Show-Msg ("$count 件のリンクを、ダウンロードして投稿します。`n時間がかかるので、終わるまでツールを閉じないで下さい。`n`n始めますか？") 'YesNo')
     if ($ans -ne 'Yes') { return }
-    $btnPost.Enabled = $false; $btnMerge.Enabled = $false; $btnBatch.Enabled = $false
+    $btnPost.Enabled = $false; $btnMerge.Enabled = $false; $btnMove.Enabled = $false; $btnBatch.Enabled = $false
     try {
         if (-not $script:releases.Count) { Load-Releases }
         $r = Invoke-Batch $dlg.FileName
@@ -571,7 +713,7 @@ function Start-Batch {
     } catch {
         $lblStatus.Text = 'エラー：' + $_.Exception.Message
         (Show-Msg ("止まりました。`n`n$($_.Exception.Message)")) | Out-Null
-    } finally { $btnPost.Enabled = $true; $btnMerge.Enabled = $true; $btnBatch.Enabled = $true }
+    } finally { $btnPost.Enabled = $true; $btnMerge.Enabled = $true; $btnMove.Enabled = $true; $btnBatch.Enabled = $true }
 }
 
 # ---------- 画面 ----------
@@ -602,15 +744,17 @@ $btnToken = Add-Control (New-Object System.Windows.Forms.Button) 470 10 134 28
 $btnToken.Text = 'トークン設定'
 
 # 投稿先
-$rbNew = Add-Control (New-Object System.Windows.Forms.RadioButton) 16 48 190
+$rbNew = Add-Control (New-Object System.Windows.Forms.RadioButton) 16 48 140
 $rbNew.Text = '新しい小分類を作る'; $rbNew.Checked = $true
-$rbAdd = Add-Control (New-Object System.Windows.Forms.RadioButton) 214 48 190
+$rbAdd = Add-Control (New-Object System.Windows.Forms.RadioButton) 160 48 150
 $rbAdd.Text = '今ある小分類に追加'
 $cbExisting = Add-Control (New-Object System.Windows.Forms.ComboBox) 16 80 540
 $cbExisting.DropDownStyle = 'DropDownList'; $cbExisting.Enabled = $false
 $btnReload = Add-Control (New-Object System.Windows.Forms.Button) 562 79 42 28
 $btnReload.Text = '↻'
-$btnMerge = Add-Control (New-Object System.Windows.Forms.Button) 430 45 174 28
+$btnMove = Add-Control (New-Object System.Windows.Forms.Button) 316 45 148 28
+$btnMove.Text = 'マイドンを移動…'
+$btnMerge = Add-Control (New-Object System.Windows.Forms.Button) 470 45 134 28
 $btnBatch = Add-Control (New-Object System.Windows.Forms.Button) 316 10 148 28
 $btnBatch.Text = '一括投稿（一覧）…'
 $btnMerge.Text = '小分類をまとめる…'
@@ -733,6 +877,7 @@ $rbNew.Add_CheckedChanged({ Update-Mode })
 $rbAdd.Add_CheckedChanged({ Update-Mode })
 $btnReload.Add_Click({ Load-Releases })
 $btnMerge.Add_Click({ Show-MergeDialog })
+$btnMove.Add_Click({ Show-MoveDialog })
 $btnBatch.Add_Click({ Start-Batch })
 
 $btnAddM.Add_Click({
