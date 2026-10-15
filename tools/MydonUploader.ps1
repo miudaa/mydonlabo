@@ -273,6 +273,250 @@ function Show-MergeDialog {
     } finally { $btnPost.Enabled = $true; $btnMerge.Enabled = $true }
 }
 
+# ---------- 一括投稿（一覧ファイルから） ----------
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+$script:gfCookies = New-Object System.Net.CookieContainer
+$script:gfHandler = New-Object System.Net.Http.HttpClientHandler
+$script:gfHandler.CookieContainer = $script:gfCookies
+$script:gfHandler.AllowAutoRedirect = $true
+$script:gfHttp = New-Object System.Net.Http.HttpClient ($script:gfHandler)
+$script:gfHttp.Timeout = [TimeSpan]::FromHours(12)
+$script:gfHttp.DefaultRequestHeaders.UserAgent.ParseAdd('Mozilla/5.0 (Windows NT 10.0; Win64; x64) MydonLaboUploader/1.0')
+
+function Get-ResponseFileName($res, [string]$fallback) {
+    $cd = $res.Content.Headers.ContentDisposition
+    if ($cd) {
+        $n = if ($cd.FileNameStar) { $cd.FileNameStar } else { $cd.FileName }
+        if ($n) { $n = $n.Trim('"'); try { $n = [Uri]::UnescapeDataString($n) } catch { }; return $n }
+    }
+    # Content-Disposition が無い/読めない時は生のヘッダから拾う
+    $raw = $null
+    if ($res.Content.Headers.TryGetValues('Content-Disposition', [ref]$raw)) {
+        $line = ($raw -join ';')
+        if ($line -match "filename\*=UTF-8''([^;]+)") { return [Uri]::UnescapeDataString($Matches[1]) }
+        if ($line -match 'filename="?([^";]+)"?') { $b = [Text.Encoding]::GetEncoding('ISO-8859-1').GetBytes($Matches[1]); return [Text.Encoding]::UTF8.GetString($b) }
+    }
+    return $fallback
+}
+
+# 応答をファイルに保存。HTML（ダウンロードページ）なら $null を返して中身の文字列を $script:lastHtml に入れる
+function Save-HttpResponse($res, [string]$dir, [string]$fallbackName) {
+    $ct = if ($res.Content.Headers.ContentType) { $res.Content.Headers.ContentType.MediaType } else { '' }
+    if ($ct -like 'text/html*') { $script:lastHtml = Wait-Task ($res.Content.ReadAsStringAsync()); return $null }
+    $name = Get-ResponseFileName $res $fallbackName
+    $name = ($name -replace '[\\/:*?"<>|]', '_')
+    $path = Join-Path $dir $name
+    $src = Wait-Task ($res.Content.ReadAsStreamAsync())
+    $fs = [IO.File]::Create($path)
+    try { Wait-Task ($src.CopyToAsync($fs, 1048576)) | Out-Null } finally { $fs.Dispose(); $src.Dispose() }
+    return $path
+}
+
+function Get-Http([string]$url, [string]$referer) {
+    $req = New-Object System.Net.Http.HttpRequestMessage ([System.Net.Http.HttpMethod]::Get, $url)
+    if ($referer) { $req.Headers.Referrer = [Uri]$referer }
+    $res = Wait-Task ($script:gfHttp.SendAsync($req, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead))
+    if (-not $res.IsSuccessStatusCode) { throw "ダウンロードできませんでした（$([int]$res.StatusCode)）：$url" }
+    return $res
+}
+
+# ギガファイル便などのリンクからファイルを落とす。落とせたファイルのパスの配列を返す
+function Get-LinkFiles([string]$url, [string]$dir) {
+    $u = [Uri]$url
+    $script:lastHtml = ''
+    $res = Get-Http $url $null                                 # まずページを開いて Cookie をもらう
+    $p = Save-HttpResponse $res $dir 'download.bin'
+    if ($p) { return @($p) }
+    if ($u.Host -like '*gigafile.nu') {
+        $id = $u.AbsolutePath.Trim('/')
+        $base = "$($u.Scheme)://$($u.Host)"
+        foreach ($try in @("$base/download.php?file=$id", "$base/dl_zip.php?file=$id")) {
+            $script:lastHtml = ''
+            try { $res = Get-Http $try $url } catch { continue }
+            $p = Save-HttpResponse $res $dir "$id.zip"
+            if ($p) { return @($p) }
+        }
+        # まとめページ：中のダウンロードリンクを全部拾う
+        $html = [string]$script:lastHtml
+        $ids = @([regex]::Matches($html, 'download\.php\?file=([0-9A-Za-z\-]+)') | ForEach-Object { $_.Groups[1].Value } | Select-Object -Unique)
+        $out = @()
+        foreach ($fid in $ids) {
+            $res = Get-Http "$base/download.php?file=$fid" $url
+            $p = Save-HttpResponse $res $dir "$fid.zip"
+            if ($p) { $out += $p }
+        }
+        if ($out.Count) { return $out }
+        if ($html -match 'パスワード|password') { throw 'パスワード付きのリンクでした。' }
+        throw 'ダウンロード用のファイルが見つかりませんでした（期限切れか、ページの形が変わったかもしれません）。'
+    }
+    throw 'ファイルではなくページが返ってきました。直接ダウンロードできるリンクか確かめて下さい。'
+}
+
+# zip の中から「Config.json が入っているフォルダ」＝マイドン1体を探す
+function Get-MydonRoots($zip) {
+    $roots = @()
+    foreach ($e in $zip.Entries) {
+        $full = $e.FullName -replace '\\', '/'
+        if ($full -match '(^|/)config\.json$' -and -not $e.FullName.EndsWith('/')) {
+            $dir = $full.Substring(0, $full.Length - 'config.json'.Length).TrimEnd('/')
+            $roots += $dir
+        }
+    }
+    return @($roots | Select-Object -Unique)
+}
+
+function Get-RootThumb($zip, [string]$root, [string]$dir) {
+    $pre = if ($root) { $root + '/' } else { '' }
+    $pngs = @($zip.Entries | Where-Object { ($_.FullName -replace '\\', '/').StartsWith($pre) -and $_.Name -match '\.(png|gif)$' })
+    if (-not $pngs.Count) { return $null }
+    $pick = @($pngs | Where-Object { ($_.FullName -replace '\\', '/') -match '/normal/' } | Sort-Object { [int](($_.Name -replace '\D', '') + '0') } , Name)
+    $e = if ($pick.Count) { $pick[0] } else { $pngs[0] }
+    $out = Join-Path $dir ([guid]::NewGuid().ToString('N') + [IO.Path]::GetExtension($e.Name))
+    [System.IO.Compression.ZipFileExtensions]::ExtractToFile($e, $out, $true)
+    return $out
+}
+
+# 1つのダウンロードファイルを、マイドン1体ずつの {Name, Zip, Thumbs} に分ける
+function Split-Download([string]$path, [string]$dir, [string[]]$thumbs) {
+    $stem = [IO.Path]::GetFileNameWithoutExtension($path)
+    $zip = $null
+    try { $zip = [System.IO.Compression.ZipFile]::OpenRead($path) } catch { $zip = $null }
+    if (-not $zip) {
+        # 普通の zip として開けない（7z など）時はそのまま1体として上げる
+        return @([pscustomobject]@{ Name = $stem; Zip = $path; Thumbs = $thumbs; Note = 'zipとして開けなかったので、そのまま上げました' })
+    }
+    try {
+        $roots = @(Get-MydonRoots $zip)
+        if ($roots.Count -le 1) { return @([pscustomobject]@{ Name = $stem; Zip = $path; Thumbs = $thumbs; Note = '' }) }
+        $items = @()
+        $i = 0
+        foreach ($root in ($roots | Sort-Object)) {
+            $name = ($root -split '/')[-1]
+            $outZip = Join-Path $dir ((($name -replace '[\\/:*?"<>|]', '_')) + '_' + [guid]::NewGuid().ToString('N').Substring(0, 6) + '.zip')
+            $fs = [IO.File]::Create($outZip)
+            $za = New-Object System.IO.Compression.ZipArchive ($fs, [System.IO.Compression.ZipArchiveMode]::Create)
+            try {
+                foreach ($e in $zip.Entries) {
+                    $full = $e.FullName -replace '\\', '/'
+                    if (-not ($full -eq $root -or $full.StartsWith($root + '/'))) { continue }
+                    $ne = $za.CreateEntry($full, [System.IO.Compression.CompressionLevel]::Optimal)
+                    $ne.LastWriteTime = $e.LastWriteTime
+                    if ($full.EndsWith('/')) { continue }
+                    $src = $e.Open(); $dst = $ne.Open()
+                    try { $src.CopyTo($dst) } finally { $dst.Dispose(); $src.Dispose() }
+                }
+            } finally { $za.Dispose(); $fs.Dispose() }
+            $th = @()
+            if ($thumbs.Count -eq $roots.Count) { $th = @($thumbs[$i]) }
+            else { $t = Get-RootThumb $zip $root $dir; if ($t) { $th = @($t) } elseif ($thumbs.Count) { $th = @($thumbs[0]) } }
+            $items += [pscustomobject]@{ Name = $name; Zip = $outZip; Thumbs = $th; Note = '' }
+            $i++
+        }
+        return $items
+    } finally { $zip.Dispose() }
+}
+
+function Find-OrCreateRelease([string]$cat, [string]$title) {
+    foreach ($r in $script:releases) {
+        $c = ''
+        foreach ($line in (([string]$r.body) -split "`r?`n")) { if ($line -match '^\s*(カテゴリ|category)\s*[:：;；]\s*(.+?)\s*$') { $c = $Matches[2]; break } }
+        if ($r.name -eq $title -and $c -eq $cat) { return (Invoke-Gh 'GET' "/releases/$($r.id)" $null) }
+    }
+    $tag = 'post-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + ([guid]::NewGuid().ToString('N').Substring(0, 4))
+    $body = "カテゴリ: $cat`nfps: `nカラー: default`nシミュレーター: taikonauts"
+    return (Invoke-Gh 'POST' '/releases' @{ tag_name = $tag; name = $title; body = $body; draft = $true })
+}
+
+function Invoke-Batch([string]$csvPath) {
+    $rows = @(Import-Csv -Path $csvPath -Encoding UTF8)
+    $rows = @($rows | Where-Object { $_.'リンク' -and $_.'リンク'.Trim() })
+    if (-not $rows.Count) { throw '一覧にリンクがありません。' }
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) ('MydonLaboBatch_' + [guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+    $log = New-Object System.Collections.Generic.List[string]
+    $okCount = 0
+    try {
+        $groups = $rows | Group-Object { "$($_.'大分類')`t$($_.'小分類')" }
+        $progress.Maximum = $rows.Count; $progress.Value = 0
+        foreach ($g in $groups) {
+            $cat, $title = $g.Name -split "`t", 2
+            if (-not $title) { $title = 'Discord配布' }
+            $lblStatus.Text = "小分類「$title」を準備中…"
+            $rel = Find-OrCreateRelease $cat $title
+            $nums = @($rel.assets | ForEach-Object { if ($_.name -match '^m(\d+)') { [int]$Matches[1] } })
+            $n = if ($nums.Count) { [int](($nums | Measure-Object -Maximum).Maximum) + 1 } else { 1 }
+            $nameLines = New-Object System.Collections.Generic.List[string]
+            foreach ($row in $g.Group) {
+                $link = $row.'リンク'.Trim()
+                $work = Join-Path $tmp ([guid]::NewGuid().ToString('N')); New-Item -ItemType Directory -Path $work | Out-Null
+                try {
+                    $lblStatus.Text = "ダウンロード中… $link"
+                    $files = @(Get-LinkFiles $link $work)
+                    $thumbs = @(([string]$row.'サムネ') -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ -and (Test-Path $_) })
+                    $items = @()
+                    foreach ($f in $files) { $items += Split-Download $f $work $thumbs }
+                    if ($row.'名前' -and $items.Count -eq 1) { $items[0].Name = $row.'名前'.Trim() }
+                    foreach ($it in $items) {
+                        $id = 'm{0:D2}' -f $n; $n++
+                        $k = 0
+                        foreach ($t in $it.Thumbs) {
+                            $k++; $ext = [IO.Path]::GetExtension($t).ToLower()
+                            $lblStatus.Text = "「$($it.Name)」の画像をアップロード中…"
+                            Send-Asset $rel.id $t $(if ($k -eq 1) { "$id$ext" } else { "${id}_$k$ext" })
+                        }
+                        $ext = [IO.Path]::GetExtension($it.Zip).ToLower(); if (-not $ext) { $ext = '.zip' }
+                        $lblStatus.Text = "「$($it.Name)」をアップロード中…（$(Format-Size (Get-Item $it.Zip).Length)）"
+                        Send-Asset $rel.id $it.Zip "$id$ext"
+                        $nameLines.Add("名前 ${id}: $($it.Name)")
+                        $okCount++
+                        $log.Add("○ $($it.Name)" + $(if ($it.Note) { "（$($it.Note)）" } else { '' }))
+                    }
+                } catch {
+                    $log.Add("× $link → $($_.Exception.Message)")
+                } finally {
+                    Remove-Item $work -Recurse -Force -ErrorAction SilentlyContinue
+                    $progress.Value = [Math]::Min($progress.Maximum, $progress.Value + 1)
+                }
+            }
+            if ($nameLines.Count) {
+                $body = ([string]$rel.body).TrimEnd() + "`n" + ($nameLines -join "`n")
+                Invoke-Gh 'PATCH' "/releases/$($rel.id)" @{ body = $body; draft = $false } | Out-Null
+            } elseif ($rel.draft) {
+                Invoke-Gh 'DELETE' "/releases/$($rel.id)" $null | Out-Null
+            }
+        }
+    } finally {
+        Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    $logPath = Join-Path ([IO.Path]::GetDirectoryName($csvPath)) ('一括投稿の結果_' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.txt')
+    [IO.File]::WriteAllLines($logPath, $log, [Text.Encoding]::UTF8)
+    return [pscustomobject]@{ Ok = $okCount; Fail = @($log | Where-Object { $_.StartsWith('×') }).Count; Log = $logPath }
+}
+
+function Start-Batch {
+    if (-not $script:token) { [System.Windows.Forms.MessageBox]::Show('先に「トークン設定」をして下さい。', 'マイドンラボ') | Out-Null; return }
+    $dlg = New-Object System.Windows.Forms.OpenFileDialog
+    $dlg.Title = '一括投稿の一覧ファイル（CSV）を選んで下さい'
+    $dlg.Filter = 'CSV (*.csv)|*.csv'
+    if ($dlg.ShowDialog() -ne 'OK') { return }
+    $count = @(Import-Csv -Path $dlg.FileName -Encoding UTF8 | Where-Object { $_.'リンク' }).Count
+    $ans = [System.Windows.Forms.MessageBox]::Show("$count 件のリンクを、ダウンロードして投稿します。`n時間がかかるので、終わるまでツールを閉じないで下さい。`n`n始めますか？", 'マイドンラボ', 'YesNo')
+    if ($ans -ne 'Yes') { return }
+    $btnPost.Enabled = $false; $btnMerge.Enabled = $false; $btnBatch.Enabled = $false
+    try {
+        if (-not $script:releases.Count) { Load-Releases }
+        $r = Invoke-Batch $dlg.FileName
+        $lblStatus.Text = "一括投稿が終わりました：成功 $($r.Ok) 体 / 失敗 $($r.Fail) 件"
+        [System.Windows.Forms.MessageBox]::Show("終わりました！`n成功：$($r.Ok) 体`n失敗：$($r.Fail) 件`n`n結果はこのファイルにまとめました：`n$($r.Log)", 'マイドンラボ') | Out-Null
+        Load-Releases
+    } catch {
+        $lblStatus.Text = 'エラー：' + $_.Exception.Message
+        [System.Windows.Forms.MessageBox]::Show("止まりました。`n`n$($_.Exception.Message)", 'マイドンラボ') | Out-Null
+    } finally { $btnPost.Enabled = $true; $btnMerge.Enabled = $true; $btnBatch.Enabled = $true }
+}
+
 # ---------- 画面 ----------
 $font = New-Object System.Drawing.Font ('Yu Gothic UI', 9.5)
 $form = New-Object System.Windows.Forms.Form
@@ -296,7 +540,7 @@ function Add-Control($ctl, $x, $y, $w, $h = 26) {
 }
 
 # トークン
-$lblToken = Add-Label '' 16 12 420
+$lblToken = Add-Label '' 16 12 296
 $btnToken = Add-Control (New-Object System.Windows.Forms.Button) 470 10 134 28
 $btnToken.Text = 'トークン設定'
 
@@ -310,6 +554,8 @@ $cbExisting.DropDownStyle = 'DropDownList'; $cbExisting.Enabled = $false
 $btnReload = Add-Control (New-Object System.Windows.Forms.Button) 562 79 42 28
 $btnReload.Text = '↻'
 $btnMerge = Add-Control (New-Object System.Windows.Forms.Button) 430 45 174 28
+$btnBatch = Add-Control (New-Object System.Windows.Forms.Button) 316 10 148 28
+$btnBatch.Text = '一括投稿（一覧）…'
 $btnMerge.Text = '小分類をまとめる…'
 
 # 項目
@@ -363,7 +609,7 @@ $script:releases = @()
 $script:token    = Get-Token
 
 function Update-TokenLabel {
-    if ($script:token) { $lblToken.Text = "投稿先：$Owner/$Repo（トークン設定済み）"; $lblToken.ForeColor = [System.Drawing.Color]::DarkGreen }
+    if ($script:token) { $lblToken.Text = "✓ トークン設定済み（$Repo）"; $lblToken.ForeColor = [System.Drawing.Color]::DarkGreen }
     elseif ($script:tokenError) { $lblToken.Text = "保存したトークンを読めませんでした：$script:tokenError"; $lblToken.ForeColor = [System.Drawing.Color]::Firebrick }
     else { $lblToken.Text = 'まず「トークン設定」をして下さい'; $lblToken.ForeColor = [System.Drawing.Color]::Firebrick }
 }
@@ -430,6 +676,7 @@ $rbNew.Add_CheckedChanged({ Update-Mode })
 $rbAdd.Add_CheckedChanged({ Update-Mode })
 $btnReload.Add_Click({ Load-Releases })
 $btnMerge.Add_Click({ Show-MergeDialog })
+$btnBatch.Add_Click({ Start-Batch })
 
 $btnAddM.Add_Click({
     $dlg = New-Object System.Windows.Forms.OpenFileDialog
