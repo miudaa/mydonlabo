@@ -51,9 +51,16 @@ a{color:inherit}
 .cathead button{margin-left:auto;background:none;border:0;color:var(--muted);font:inherit;font-size:11px;cursor:pointer}
 .cathead button:hover{color:var(--strong)}
 .catsec .grid{margin-top:8px}
+/* png（1枚絵）は小さく見えるので 1.3 倍で表示 */
+img.png{transform:scale(1.3);transform-origin:center}
+.thumbs button,.gal{overflow:hidden}
+.ftile{display:block;overflow:hidden;border-radius:6px;background:var(--panel);min-height:0}
+.ftile img{width:100%;height:100%;object-fit:contain;display:block}
+.sibimg{display:block;width:48px;height:48px;margin:0 auto 2px;overflow:hidden;border-radius:5px}
+.sibimg img{width:100%;height:100%;object-fit:contain;display:block;margin:0}
 .onbg{color:var(--on-bg)}
 .fthumb{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:6px;padding:10px;background:var(--line)}
-.fthumb img,.fthumb span{width:100%;height:100%;min-height:0;object-fit:contain;border-radius:6px;background:var(--panel);display:block}
+.fthumb .ftile{width:100%;height:100%;min-height:0}
 .fthumb .fmore{position:absolute;right:8px;bottom:8px;width:auto;height:auto;background:var(--badge-bg);color:#fff;font-size:11px;padding:1px 7px;border-radius:999px}
 .mbox.wide{max-width:760px}
 .fpop h2{margin:4px 0 2px;font-size:17px;display:flex;align-items:baseline;gap:8px}
@@ -249,6 +256,7 @@ function parseBody(body){
 const localDay = s => { const d = new Date(s), z = n => String(n).padStart(2, '0'); return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`; };
 const isDefaultColor = p => !p.color || /^(?:default|デフォルト|標準)$/i.test(p.color);
 const stem = n => n.replace(/\.[^.]+$/, '');
+const pngc = u => /\.png(?:$|[?#])/i.test(u) || /^data:image\/png/i.test(u) ? ' class="png"' : '';
 const isImgAsset = a => (a.type || '').startsWith('image/') || IMG_RE.test(a.name);
 
 // 1つのリリース（小分類）の添付を、同じ名前の「画像＋zip」ごとにマイドン1体ずつへ分ける
@@ -421,7 +429,7 @@ function renderAdv(){
 
 function card(x, showGroup){
   return `<div class="card" role="button" tabindex="0" data-id="${esc(x.id)}">
-      <div class="thumb">${x.images[0] ? `<img loading="lazy" src="${esc(x.images[0])}" alt="">` : ''}
+      <div class="thumb">${x.images[0] ? `<img loading="lazy"${pngc(x.images[0])} src="${esc(x.images[0])}" alt="">` : ''}
         ${x.images.length > 1 ? `<span class="badge">${x.images.length}枚</span>` : ''}</div>
       <div class="meta"><h3>${esc(x.name)}</h3>
         <div class="sub">${showGroup ? `<span class="chip">${esc(x.rtitle)}</span>` : ''}${x.fps ? `<span>${esc(x.fps)}fps</span>` : ''}<span>${fmtDate(x.date)}</span></div></div>
@@ -430,7 +438,7 @@ function card(x, showGroup){
 }
 
 function folder(p, items){
-  const pics = items.slice(0, 4).map(x => x.images[0] ? `<img loading="lazy" src="${esc(x.images[0])}" alt="">` : '<span></span>').join('');
+  const pics = items.slice(0, 4).map(x => x.images[0] ? `<span class="ftile"><img loading="lazy"${pngc(x.images[0])} src="${esc(x.images[0])}" alt=""></span>` : '<span class="ftile"></span>').join('');
   return `<div class="card folder" role="button" tabindex="0" data-folder="${esc(p.rid)}">
       <div class="thumb fthumb">${pics}${items.length > 4 ? `<span class="fmore">+${items.length - 4}</span>` : ''}</div>
       <div class="meta"><h3>${esc(p.rtitle)}</h3>
@@ -512,22 +520,22 @@ function openDetail(id, fromFolder){
   $('.mbox').classList.remove('wide');
   if (!fromFolder) S.openFolder = null;
   $('#mbody').innerHTML = `${fromFolder ? `<button type="button" class="fback" data-backfolder="${esc(fromFolder)}">‹ 「${esc(x.rtitle)}」に戻る</button>` : ''}<div class="detail"><div class="dmedia">
-    <div class="gal">${x.images.length ? `<img id="gimg" src="${esc(x.images[0])}" alt="">` : ''}
+    <div class="gal">${x.images.length ? `<img id="gimg"${pngc(x.images[0])} src="${esc(x.images[0])}" alt="">` : ''}
       ${x.images.length > 1 ? '<button class="nav l" id="gl" aria-label="前の画像">‹</button><button class="nav r" id="gr" aria-label="次の画像">›</button>' : ''}</div>
-    ${x.images.length > 1 ? `<div class="thumbs">${x.images.map((u, k) => `<button data-k="${k}" aria-current="${k === 0}"><img src="${esc(u)}" alt=""></button>`).join('')}</div>` : ''}
+    ${x.images.length > 1 ? `<div class="thumbs">${x.images.map((u, k) => `<button data-k="${k}" aria-current="${k === 0}"><img${pngc(u)} src="${esc(u)}" alt=""></button>`).join('')}</div>` : ''}
     </div><div class="dinfo">
     <h2>${esc(x.name)}</h2>
     <div class="dmeta">${x.cat ? `<span class="chip">${esc(x.cat)}</span>` : ''}<span class="chip">${esc(x.rtitle)}</span>${x.tags.map(t => `<span class="chip">#${esc(t)}</span>`).join('')}${x.fps ? `<span>${esc(x.fps)}fps</span>` : ''}${x.color ? `<span>カラー: ${esc(x.color)}</span>` : ''}<span>${esc(x.sim)}</span><span>${fmtDate(x.date)}</span></div>
     ${x.desc ? `<p class="desc">${esc(x.desc)}</p>` : ''}
     <div class="dl">${x.files.map(f => `<div class="frow"><a class="file" href="${esc(f.url)}" target="_blank" rel="noopener"><span>⬇ ${esc(f.name.replace(/^m\d+(?=[_.])/i, x.name))}</span><small>${fmtSize(f.size)}</small></a><button class="copy" data-copy="${esc(f.url)}" aria-label="${esc(f.name)} のURLをコピー">コピー</button></div>`).join('') || '<p class="count">ダウンロードできるファイルはありません</p>'}</div>
     <button class="btn primary wide" data-dbm="${esc(x.id)}"></button>
-    ${sibs.length > 1 ? `<p class="slabel">「${esc(x.rtitle)}」の他のマイドン</p><div class="sibs">${sibs.map(y => `<button type="button" data-sib="${esc(y.id)}" aria-current="${y.id === x.id}">${y.images[0] ? `<img src="${esc(y.images[0])}" alt="">` : ''}<span>${esc(y.name)}</span></button>`).join('')}</div>` : ''}
+    ${sibs.length > 1 ? `<p class="slabel">「${esc(x.rtitle)}」の他のマイドン</p><div class="sibs">${sibs.map(y => `<button type="button" data-sib="${esc(y.id)}" aria-current="${y.id === x.id}">${y.images[0] ? `<span class="sibimg"><img${pngc(y.images[0])} src="${esc(y.images[0])}" alt=""></span>` : ''}<span>${esc(y.name)}</span></button>`).join('')}</div>` : ''}
     <a class="src" href="${esc(x.page)}" target="_blank" rel="noopener">GitHub のリリースを開く</a>
   </div></div>`;
   setDbm($('#mbody [data-dbm]'), x.id);
   const show = k => {
     i = (k + x.images.length) % x.images.length;
-    $('#gimg').src = x.images[i];
+    $('#gimg').src = x.images[i]; $('#gimg').classList.toggle('png', !!pngc(x.images[i]));
     document.querySelectorAll('.thumbs button').forEach((t, n) => t.setAttribute('aria-current', n === i));
   };
   $('#gl')?.addEventListener('click', () => show(i - 1));
