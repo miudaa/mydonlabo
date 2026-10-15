@@ -443,7 +443,15 @@ function Invoke-Batch([string]$csvPath) {
     $tmp = Join-Path ([IO.Path]::GetTempPath()) ('MydonLaboBatch_' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force -Path $tmp | Out-Null
     $log = New-Object System.Collections.Generic.List[string]
-    $okCount = 0
+    $okCount = 0; $skipCount = 0
+    # すでにサイトにあるマイドンの名前（被りは飛ばす）
+    $seen = New-Object 'System.Collections.Generic.HashSet[string]'
+    $norm = { param($t) (([string]$t).Normalize([Text.NormalizationForm]::FormKC) -replace '\s', '').ToLower() }
+    $lblStatus.Text = 'サイトにあるマイドンを確認中…'
+    foreach ($r in @(Invoke-Gh 'GET' '/releases?per_page=100' $null)) {
+        if ($r.draft) { continue }
+        foreach ($it in (Get-ReleaseItems $r)) { [void]$seen.Add((& $norm $it.Name)) }
+    }
     try {
         $groups = $rows | Group-Object { "$($_.'大分類')`t$($_.'小分類')" }
         $progress.Maximum = $rows.Count; $progress.Value = 0
@@ -460,12 +468,15 @@ function Invoke-Batch([string]$csvPath) {
                 $work = Join-Path $tmp ([guid]::NewGuid().ToString('N')); New-Item -ItemType Directory -Path $work | Out-Null
                 try {
                     $lblStatus.Text = "ダウンロード中… $link"
-                    $files = @(Get-LinkFiles $link $work)
+                    $files = if (Test-Path -LiteralPath $link -PathType Leaf) { @((Copy-Item -LiteralPath $link -Destination $work -PassThru).FullName) } else { @(Get-LinkFiles $link $work) }
                     $thumbs = @(([string]$row.'サムネ') -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ -and (Test-Path $_) })
                     $items = @()
                     foreach ($f in $files) { $items += Split-Download $f $work $thumbs }
                     if ($row.'名前' -and $items.Count -eq 1) { $items[0].Name = $row.'名前'.Trim() }
                     foreach ($it in $items) {
+                        $key = & $norm $it.Name
+                        if ($seen.Contains($key)) { $log.Add("△ $($it.Name)（もうあるので飛ばしました）"); $skipCount++; continue }
+                        [void]$seen.Add($key)
                         $id = 'm{0:D2}' -f $n; $n++
                         $k = 0
                         foreach ($t in $it.Thumbs) {
@@ -499,7 +510,7 @@ function Invoke-Batch([string]$csvPath) {
     }
     $logPath = Join-Path ([IO.Path]::GetDirectoryName($csvPath)) ('一括投稿の結果_' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.txt')
     [IO.File]::WriteAllLines($logPath, $log, [Text.Encoding]::UTF8)
-    return [pscustomobject]@{ Ok = $okCount; Fail = @($log | Where-Object { $_.StartsWith('×') }).Count; Log = $logPath }
+    return [pscustomobject]@{ Ok = $okCount; Skip = $skipCount; Fail = @($log | Where-Object { $_.StartsWith('×') }).Count; Log = $logPath }
 }
 
 function Start-Batch {
@@ -515,8 +526,8 @@ function Start-Batch {
     try {
         if (-not $script:releases.Count) { Load-Releases }
         $r = Invoke-Batch $dlg.FileName
-        $lblStatus.Text = "一括投稿が終わりました：成功 $($r.Ok) 体 / 失敗 $($r.Fail) 件"
-        [System.Windows.Forms.MessageBox]::Show("終わりました！`n成功：$($r.Ok) 体`n失敗：$($r.Fail) 件`n`n結果はこのファイルにまとめました：`n$($r.Log)", 'マイドンラボ') | Out-Null
+        $lblStatus.Text = "一括投稿が終わりました：成功 $($r.Ok) 体 / 被り $($r.Skip) 体 / 失敗 $($r.Fail) 件"
+        [System.Windows.Forms.MessageBox]::Show("終わりました！`n成功：$($r.Ok) 体`n被りで飛ばした：$($r.Skip) 体`n失敗：$($r.Fail) 件`n`n結果はこのファイルにまとめました：`n$($r.Log)", 'マイドンラボ') | Out-Null
         Load-Releases
     } catch {
         $lblStatus.Text = 'エラー：' + $_.Exception.Message
