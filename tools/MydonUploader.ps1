@@ -369,10 +369,13 @@ function Get-MydonRoots($zip) {
 
 function Get-RootThumb($zip, [string]$root, [string]$dir) {
     $pre = if ($root) { $root + '/' } else { '' }
-    $pngs = @($zip.Entries | Where-Object { ($_.FullName -replace '\\', '/').StartsWith($pre) -and $_.Name -match '\.(png|gif)$' })
-    if (-not $pngs.Count) { return $null }
-    $pick = @($pngs | Where-Object { ($_.FullName -replace '\\', '/') -match '/normal/' } | Sort-Object { [int](($_.Name -replace '\D', '') + '0') } , Name)
-    $e = if ($pick.Count) { $pick[0] } else { $pngs[0] }
+    $imgs = @($zip.Entries | Where-Object { ($_.FullName -replace '\\', '/').StartsWith($pre) -and $_.Name -match '\.(png|gif)$' })
+    if (-not $imgs.Count) { return $null }
+    $num = { $d = ($_.Name -replace '\D', ''); if ($d) { [long]$d } else { 0 } }
+    # サムネ：balloon_broke の最後の画像 → なければ normal の最初の画像 → なければ何か1枚
+    $broke = @($imgs | Where-Object { ($_.FullName -replace '\\', '/') -match '(^|/)balloon_broke/' } | Sort-Object $num, Name)
+    $normal = @($imgs | Where-Object { ($_.FullName -replace '\\', '/') -match '(^|/)normal/' } | Sort-Object $num, Name)
+    $e = if ($broke.Count) { $broke[-1] } elseif ($normal.Count) { $normal[0] } else { $imgs[0] }
     $out = Join-Path $dir ([guid]::NewGuid().ToString('N') + [IO.Path]::GetExtension($e.Name))
     [System.IO.Compression.ZipFileExtensions]::ExtractToFile($e, $out, $true)
     return $out
