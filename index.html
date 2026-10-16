@@ -210,22 +210,25 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
 .odds td:last-child,.odds th:last-child{text-align:right;font-variant-numeric:tabular-nums}
 .odds tr.rare td{color:#b8860b;font-weight:700}
 /* 黄金のお祝い */
-#gold{position:fixed;inset:0;z-index:200;display:grid;place-items:center;padding:16px;overflow:hidden;background:radial-gradient(circle at 50% 45%,#fff6c9 0%,#ffd44a 32%,#d99a06 70%,#7a4f00 100%);cursor:pointer}
-.gshine{position:absolute;inset:-50%;background:repeating-conic-gradient(from 0deg,rgba(255,255,255,.38) 0deg 9deg,transparent 9deg 22deg);animation:gspin 14s linear infinite}
-.gsparks{position:absolute;inset:0;pointer-events:none}
-.gsparks i{position:absolute;width:var(--s);height:var(--s);left:var(--x);top:var(--y);background:#fff;clip-path:polygon(50% 0,61% 39%,100% 50%,61% 61%,50% 100%,39% 61%,0 50%,39% 39%);animation:gtwinkle var(--d) ease-in-out infinite;animation-delay:var(--t);opacity:0}
-.gcard{position:relative;text-align:center;padding:26px 26px 22px;max-width:420px;border-radius:18px;background:linear-gradient(160deg,#fffbe6,#ffe58a 45%,#f6c12c);border:3px solid #fff3b0;box-shadow:0 0 0 3px #b07a00,0 0 60px 18px rgba(255,236,140,.9);animation:gpop .6s cubic-bezier(.2,1.6,.4,1) both;cursor:default}
-.gcard h2{margin:4px 0 10px;font-size:30px;line-height:1.25;color:#6b4300;background:linear-gradient(100deg,#6b4300 0%,#9a6400 40%,#e8b730 48%,#9a6400 56%,#6b4300 100%);background-size:250% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:gglint 2.2s linear infinite;filter:drop-shadow(0 2px 0 rgba(255,255,255,.7))}
-.gsub{margin:0;font-size:12px;font-weight:700;color:#8a5b00;letter-spacing:.1em}
-.gmsg{margin:0 0 16px;color:#5a3a00;font-size:13px;line-height:1.7}
-.gcard .btn{background:#7a4f00;color:#fff8d6;border-color:#5a3a00;padding:8px 22px;font-weight:700}
+#gold{position:fixed;inset:0;z-index:200;overflow:hidden;cursor:pointer;display:grid;place-items:center;background:#fff3c4 url(gacha_bg.jpg) center/cover no-repeat}
+.gconf{position:absolute;inset:0;pointer-events:none}
+.gconf i{position:absolute;top:-8%;left:var(--x);width:var(--s);height:var(--s);background:#fff;opacity:.9;animation:gfall var(--d) linear infinite;animation-delay:var(--t)}
+.gtitle{position:relative;margin:0 0 6vh;display:flex;justify-content:center;font:900 min(12vw,150px)/1 "Hiragino Maru Gothic ProN","Hiragino Sans","BIZ UDPGothic","Yu Gothic UI","Meiryo",sans-serif;letter-spacing:-.04em;animation:gslam .5s cubic-bezier(.3,1.6,.5,1) both}
+.gtitle .ch{position:relative;display:inline-block;transform:rotate(var(--r)) translateY(var(--y))}
+.gtitle .ch b,.gtitle .ch u,.gtitle .ch s{display:block;font:inherit;text-decoration:none}
+.gtitle .ch b{position:absolute;inset:0;color:#140700;-webkit-text-stroke:.26em #140700}
+.gtitle .ch u{position:absolute;inset:0;color:#b54a06;-webkit-text-stroke:.12em #b54a06}
+.gtitle .ch s{position:relative;color:#ff9b16;background:linear-gradient(180deg,#fffbd0 10%,#ffe14a 32%,#ffb21e 52%,#ff8a0a 70%,#d9560a 92%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.gtitle{flex-wrap:wrap}
+.gtitle .br{flex-basis:100%;height:0;display:none}
+@media (max-aspect-ratio:1/1){.gtitle{font-size:min(24vw,150px);line-height:1.1}.gtitle .br{display:block}}
+.gok{position:absolute;inset:0;width:100%;height:100%;background:none;border:0;cursor:pointer}
+.gok:focus-visible{outline:3px solid #fff;outline-offset:-8px}
 .tbox.goldbox{border-color:#e0a400;box-shadow:0 0 0 2px #ffd44a,0 0 40px 8px rgba(255,212,74,.8);animation:gglow 1.4s ease-in-out infinite alternate}
-@keyframes gspin{to{transform:rotate(360deg)}}
-@keyframes gtwinkle{0%,100%{opacity:0;transform:scale(.3)}50%{opacity:1;transform:scale(1)}}
-@keyframes gpop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
-@keyframes gglint{to{background-position:-200% 0}}
+@keyframes gfall{to{transform:translateY(118vh) rotate(540deg) rotateX(720deg)}}
+@keyframes gslam{from{transform:scale(2.2);opacity:0}60%{opacity:1}to{transform:none}}
 @keyframes gglow{to{box-shadow:0 0 0 2px #fff3b0,0 0 70px 18px rgba(255,212,74,.95)}}
-@media (prefers-reduced-motion: reduce){.gshine,.gsparks i,.gcard,.gcard h2,.tbox.goldbox{animation:none!important}.gsparks i{opacity:.8}}
+@media (prefers-reduced-motion: reduce){.gtitle,.gconf,.tbox.goldbox{animation:none!important}.gconf{display:none}}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 </style>
 </head>
@@ -262,8 +265,10 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
   <div class="tfoot"><p>この規約のどこかに<b>お寿司のネタ</b>が1つまぎれています。<span id="termsHint">見つけて入力すると、サイトを使えます。</span></p>
   <form id="termsForm" autocomplete="off"><input id="termsIn" type="text" placeholder="お寿司のネタ" aria-label="規約の中のお寿司のネタ"><button class="btn primary" type="submit">同意して入る</button></form>
   <p class="terr" id="termsErr" role="alert"></p></div></div></div>
-<div id="gold" hidden role="dialog" aria-modal="true" aria-labelledby="goldTitle"><div class="gshine"></div><div class="gsparks" id="gsparks"></div>
-  <div class="gcard"><p class="gsub">寿司ガチャ 0.5%</p><h2 id="goldTitle">まぐろたたき納豆</h2><p class="gmsg">おめでとうございます！ 200回に1回のレアネタを引き当てて、ちゃんと見つけました！</p><button class="btn" id="goldOk" type="button">やったー！</button></div></div>
+<div id="gold" hidden role="dialog" aria-modal="true" aria-labelledby="goldTitle">
+  <div class="gconf" id="gconf"></div>
+  <h2 id="goldTitle" class="gtitle" aria-label="まぐろたたき納豆"></h2>
+  <button class="gok" id="goldOk" type="button" aria-label="とじる"></button></div>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="modal" hidden><div class="mbox" role="dialog" aria-modal="true"><button class="x" id="mclose" aria-label="閉じる">×</button><div id="mbody"></div></div></div>
 
@@ -747,13 +752,17 @@ function showTerms(gacha){
 function closeTerms(){ $('#terms').hidden = true; document.body.style.overflow = ''; }
 function celebrate(){
   const g = $('#gold');
-  $('#gsparks').innerHTML = Array.from({ length: 36 }, () => `<i style="--x:${Math.random() * 100}%;--y:${Math.random() * 100}%;--s:${8 + Math.random() * 22}px;--d:${1.2 + Math.random() * 1.8}s;--t:${-Math.random() * 3}s"></i>`).join('');
+  // 紙吹雪（白い紙をひらひら）
+  $('#gconf').innerHTML = Array.from({ length: 40 }, () => `<i style="--x:${Math.random() * 100}%;--s:${8 + Math.random() * 12}px;--d:${4 + Math.random() * 4}s;--t:${-Math.random() * 8}s"></i>`).join('');
+  // 文字は1文字ずつ、黒と茶の縁取りに金→オレンジ。少しずつ傾けて手書きの看板っぽく
+  const tilt = [-4, 3, -2, 4, -3, 2, -1, 3];
+  $('#goldTitle').innerHTML = [...RARE.neta[0]].map((c, i) => `<span class="ch" style="--r:${tilt[i % tilt.length]}deg;--y:${i % 2 ? '-4%' : '3%'}" aria-hidden="true"><b>${c}</b><u>${c}</u><s>${c}</s></span>${i === 2 || i === 5 ? '<span class="br"></span>' : ''}`).join('');   // 縦長の画面では「まぐろ／たたき／納豆」の3行に
   g.hidden = false; document.body.style.overflow = 'hidden';
   setTimeout(() => $('#goldOk').focus(), 50);
 }
 function closeGold(){ $('#gold').hidden = true; document.body.style.overflow = ''; }
 $('#goldOk').addEventListener('click', closeGold);
-$('#gold').addEventListener('click', e => { if (!e.target.closest('.gcard')) closeGold(); });
+$('#gold').addEventListener('click', closeGold);
 $('#sushiBtn').addEventListener('click', () => showTerms(true));
 $('#termsX').addEventListener('click', closeTerms);
 $('#terms').addEventListener('click', e => { if (S.termsGacha && e.target.id === 'terms') closeTerms(); });
