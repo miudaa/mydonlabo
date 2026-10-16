@@ -159,6 +159,7 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
 .file:hover{border-color:var(--muted)}
 .file span{min-width:0;word-break:break-all}
 .file small{color:var(--muted);flex:none;font-variant-numeric:tabular-nums}
+.fsim{font-style:normal;font-size:.8em;margin-left:8px;padding:1px 7px;border-radius:999px;background:var(--accent);color:#fff;white-space:nowrap;vertical-align:1px}
 .copy{flex:none;font:inherit;font-size:12px;color:var(--ink);background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:0;width:4.6em;cursor:pointer;white-space:nowrap;text-align:center}
 .copy:hover{border-color:var(--muted)}
 .copy.done{color:var(--strong);border-color:var(--strong)}
@@ -238,10 +239,12 @@ function saveBms(){ try { localStorage.setItem(BM_KEY, JSON.stringify([...S.bms]
 // ----- リリース本文の「カテゴリ: / タグ: / fps: / カラー: / シミュレーター:」を読む -----
 const META = { sim: /^(?:シミュレーター|シミュレータ|simulator|sim)$/i, cat: /^(?:カテゴリ|category)$/i, tags: /^(?:タグ|tags?)$/i, fps: /^fps$/i, color: /^(?:カラー|色|colou?r)$/i };
 function parseBody(body){
-  const meta = { cat: null, tags: [], fps: null, color: null, sim: null, names: {} }; const rest = [];
+  const meta = { cat: null, tags: [], fps: null, color: null, sim: null, names: {}, fsims: {} }; const rest = [];
   for (const line of String(body || '').split(/\r?\n/)) {
     const nm = line.match(/^\s*名前\s+(\S+?)\s*[:：]\s*(.+?)\s*$/);
     if (nm) { meta.names[nm[1].toLowerCase()] = nm[2]; continue; }
+    const fs = line.match(/^\s*(?:シミュレーター|シミュレータ|simulator|sim)\s+(\S+?)\s*[:：]\s*(.+?)\s*$/i);   // zip ごとのシミュレーター（例：シミュレーター m01_2: TJAPlayer3）
+    if (fs) { meta.fsims[fs[1].toLowerCase()] = fs[2]; continue; }
     const m = line.match(/^\s*([^:：;；\s]+)\s*[:：;；]\s*(.*?)\s*$/);
     const key = m && Object.keys(META).find(k => META[k].test(m[1]));
     if (!key) { rest.push(line); continue; }
@@ -278,7 +281,9 @@ function buildItems(post, assets){
   return list.map(g => {
     const fpsInName = g.files.map(f => (f.name.match(/(\d+)\s*fps/i) || [])[1]).find(Boolean);
     const shown = g.label || g.name.replace(/[_\-\s]*\d+\s*fps$/i, '') || g.name;
-    return { ...post, id: post.rid + ':' + g.name, name: shown, images: g.images.map(x => x.url), files: g.files, fps: fpsInName || post.fps };
+    const files = g.files.map(f => ({ ...f, sim: post.fsims[stem(f.name).toLowerCase()] || post.sim }));
+    const sims = files.length ? [...new Map(files.map(f => [f.sim.toLowerCase(), f.sim])).values()] : [post.sim];
+    return { ...post, id: post.rid + ':' + g.name, name: shown, images: g.images.map(x => x.url), files, sims, sim: sims.join(' / '), fps: fpsInName || post.fps };
   });
 }
 
@@ -383,7 +388,7 @@ function haystack(x){
 function passes(x){
   if (S.bmOnly && !S.bms.has(x.id)) return false;
   if (S.fps && x.fps !== S.fps) return false;
-  if (S.sim && x.sim.toLowerCase() !== S.sim.toLowerCase()) return false;
+  if (S.sim && !x.sims.some(v => v.toLowerCase() === S.sim.toLowerCase())) return false;
   if (S.dFrom && localDay(x.date) < S.dFrom) return false;
   if (S.dTo && localDay(x.date) > S.dTo) return false;
   if (S.color === 'default' && !isDefaultColor(x)) return false;
@@ -415,7 +420,7 @@ function renderAdv(){
   const fpsVals = [...new Set([...FPS_LIST, ...Object.keys(fpsCount)])].sort((a, b) => b - a);
   $('#fps').innerHTML = '<option value="">すべて</option>' + fpsVals.map(v => `<option value="${esc(v)}">${esc(v)}fps（${fpsCount[v] || 0}）</option>`).join('');
   const simCount = {}, simName = {};
-  for (const x of S.items) { const k = x.sim.toLowerCase(); simCount[k] = (simCount[k] || 0) + 1; simName[k] = simName[k] || x.sim; }
+  for (const x of S.items) for (const v of x.sims) { const k = v.toLowerCase(); simCount[k] = (simCount[k] || 0) + 1; simName[k] = simName[k] || v; }
   for (const n of SIM_LIST) simName[n.toLowerCase()] = simName[n.toLowerCase()] || n;
   const simKeys = [...new Set([...SIM_LIST.map(n => n.toLowerCase()), ...Object.keys(simCount)])];
   $('#sim').innerHTML = '<option value="">すべて</option>' + simKeys.map(k => `<option value="${esc(simName[k])}">${esc(simName[k])}（${simCount[k] || 0}）</option>`).join('');
@@ -527,7 +532,7 @@ function openDetail(id, fromFolder){
     <h2>${esc(x.name)}</h2>
     <div class="dmeta">${x.cat ? `<span class="chip">${esc(x.cat)}</span>` : ''}<span class="chip">${esc(x.rtitle)}</span>${x.tags.map(t => `<span class="chip">#${esc(t)}</span>`).join('')}${x.fps ? `<span>${esc(x.fps)}fps</span>` : ''}${x.color ? `<span>カラー: ${esc(x.color)}</span>` : ''}<span>${esc(x.sim)}</span><span>${fmtDate(x.date)}</span></div>
     ${x.desc ? `<p class="desc">${esc(x.desc)}</p>` : ''}
-    <div class="dl">${x.files.map(f => `<div class="frow"><a class="file" href="${esc(f.url)}" target="_blank" rel="noopener"><span>⬇ ${esc(f.name.replace(/^m\d+(?=[_.])/i, x.name))}</span><small>${fmtSize(f.size)}</small></a><button class="copy" data-copy="${esc(f.url)}" aria-label="${esc(f.name)} のURLをコピー">コピー</button></div>`).join('') || '<p class="count">ダウンロードできるファイルはありません</p>'}</div>
+    <div class="dl">${x.files.map(f => `<div class="frow"><a class="file" href="${esc(f.url)}" target="_blank" rel="noopener"><span>⬇ ${esc(f.name.replace(/^m\d+(?=[_.])/i, x.name))}${x.sims.length > 1 ? `<em class="fsim">${esc(f.sim)}版</em>` : ''}</span><small>${fmtSize(f.size)}</small></a><button class="copy" data-copy="${esc(f.url)}" aria-label="${esc(f.name)} のURLをコピー">コピー</button></div>`).join('') || '<p class="count">ダウンロードできるファイルはありません</p>'}</div>
     <button class="btn primary wide" data-dbm="${esc(x.id)}"></button>
     ${sibs.length > 1 ? `<p class="slabel">「${esc(x.rtitle)}」の他のマイドン</p><div class="sibs">${sibs.map(y => `<button type="button" data-sib="${esc(y.id)}" aria-current="${y.id === x.id}">${y.images[0] ? `<span class="sibimg"><img${pngc(y.images[0])} src="${esc(y.images[0])}" alt=""></span>` : ''}<span>${esc(y.name)}</span></button>`).join('')}</div>` : ''}
     <a class="src" href="${esc(x.page)}" target="_blank" rel="noopener">GitHub のリリースを開く</a>

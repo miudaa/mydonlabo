@@ -161,14 +161,20 @@ function Save-AssetTo($asset, [string]$path) {
 }
 
 # 1体分の添付を、別のリリースに m番号を付け直して上げる。上げたファイル名の一覧を返す
-function Copy-ItemTo($item, $destId, [string]$id, [string]$tmp) {
+function Copy-ItemTo($item, $destId, [string]$id, [string]$tmp, [string]$destSim, [int]$fileStart = 1, [switch]$NoImages) {
     $k = 0
+    $simLines = New-Object System.Collections.Generic.List[string]
     foreach ($a in @($item.Images) + @($item.Files)) {
         $isImg = $ImageExt -contains [IO.Path]::GetExtension($a.name).ToLower()
         if ($isImg) { $k++ }
         $ext = [IO.Path]::GetExtension($a.name).ToLower(); if (-not $ext) { $ext = '.zip' }
-        $idx = if ($isImg) { $k } else { [array]::IndexOf(@($item.Files), $a) + 1 }
+        if ($isImg -and $NoImages) { continue }
+        $idx = if ($isImg) { $k } else { [array]::IndexOf(@($item.Files), $a) + $fileStart }
         $fname = if ($idx -le 1) { "$id$ext" } else { "${id}_$idx$ext" }
+        if (-not $isImg -and $item.FileSims) {
+            $sim = $item.FileSims[[string]$a.id]
+            if ($sim -and $sim -ne $destSim) { $simLines.Add("シミュレーター $([IO.Path]::GetFileNameWithoutExtension($fname)): $sim") }
+        }
         $local = Join-Path $tmp ([guid]::NewGuid().ToString('N') + $ext)
         Save-AssetTo $a $local
         if ($progress.Value -lt $progress.Maximum) { $progress.Value++ }
@@ -177,6 +183,7 @@ function Copy-ItemTo($item, $destId, [string]$id, [string]$tmp) {
         if ($progress.Value -lt $progress.Maximum) { $progress.Value++ }
         Remove-Item $local -Force -ErrorAction SilentlyContinue
     }
+    return ,$simLines
 }
 
 # 選んだマイドンを別の小分類へ移す。$dest が $null なら新しい小分類（$newCat / $newTitle）を作る
@@ -189,7 +196,7 @@ function Invoke-Move($srcRel, [string[]]$stems, $dest, [string]$newCat, [string]
         $target = Invoke-Gh 'GET' "/releases/$($dest.id)" $null
     } else {
         # 新しい小分類：元の本文の設定（fps やカラーなど）を引き継ぐ
-        $meta = (@(([string]$src.body) -split "`r?`n") | Where-Object { $_ -notmatch '^\s*名前\s+\S+\s*[:：]' }) -join "`n"
+        $meta = (@(([string]$src.body) -split "`r?`n") | Where-Object { $_ -notmatch '^\s*名前\s+\S+\s*[:：]' -and $_ -notmatch "^\s*$SimRe\s+\S+\s*[:：]" }) -join "`n"
         $meta = Set-BodyCategory $meta.TrimEnd() $newCat
         $tag = 'post-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + ([guid]::NewGuid().ToString('N').Substring(0, 4))
         $target = Invoke-Gh 'POST' '/releases' @{ tag_name = $tag; name = $newTitle; body = $meta; draft = $true }
@@ -203,11 +210,13 @@ function Invoke-Move($srcRel, [string[]]$stems, $dest, [string]$newCat, [string]
         $total = 0; foreach ($it in $items) { $total += $it.Images.Count + $it.Files.Count }
         $progress.Maximum = [Math]::Max(1, $total * 2); $progress.Value = 0
         $nameLines = New-Object System.Collections.Generic.List[string]
+        $destSim = Get-BodySim ([string]$target.body)
         try {
             foreach ($it in $items) {
                 $id = 'm{0:D2}' -f $n; $n++
-                Copy-ItemTo $it $target.id $id $tmp
+                $sl = Copy-ItemTo $it $target.id $id $tmp $destSim
                 $nameLines.Add("名前 ${id}: $($it.Name)")
+                foreach ($l in $sl) { $nameLines.Add($l) }
             }
         } catch {
             if ($created) { try { Invoke-Gh 'DELETE' "/releases/$($target.id)" $null | Out-Null } catch { } }
@@ -228,7 +237,8 @@ function Invoke-Move($srcRel, [string[]]$stems, $dest, [string]$newCat, [string]
         } else {
             $drop = @($items | ForEach-Object { $_.Stem } | Where-Object { $_ })
             $lines = @(([string]$src.body) -split "`r?`n") | Where-Object { -not ($_ -match '^\s*名前\s+(\S+?)\s*[:：]' -and $drop -contains $Matches[1].ToLower()) }
-            Invoke-Gh 'PATCH' "/releases/$($src.id)" @{ body = ($lines -join "`n") } | Out-Null
+            $fileStems = @($items | ForEach-Object { $_.Files } | ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_.name) })
+            Invoke-Gh 'PATCH' "/releases/$($src.id)" @{ body = (Remove-SimLines ($lines -join "`n") $fileStems) } | Out-Null
         }
         return [pscustomobject]@{ Count = $items.Count; Title = [string]$target.name }
     } finally {
@@ -308,6 +318,37 @@ function Get-BodyNames([string]$body) {
     return $map
 }
 
+# 本文の「シミュレーター m01_2: TJAPlayer3」（zip ごとのシミュレーター）を読む
+$SimRe = '(シミュレーター|シミュレータ|simulator|sim)'
+function Get-BodySims([string]$body) {
+    $map = @{}
+    foreach ($line in ($body -split "`r?`n")) { if ($line -match "^\s*$SimRe\s+(\S+?)\s*[:：]\s*(.+?)\s*$") { $map[$Matches[2].ToLower()] = $Matches[3] } }
+    return $map
+}
+# 小分類全体のシミュレーター（書いていなければ taikonauts）
+function Get-BodySim([string]$body) {
+    foreach ($line in ($body -split "`r?`n")) { if ($line -match "^\s*$SimRe\s*[:：;；]\s*(.+?)\s*$") { return $Matches[2] } }
+    return 'taikonauts'
+}
+# zip の名前からシミュレーターを推測する（分からなければ空）
+function Guess-Sim([string]$path) {
+    $n = [IO.Path]::GetFileNameWithoutExtension($path)
+    if ($n -match '(?i)tja\s*p(layer)?\s*3?|tjap3') { return 'TJAPlayer3' }
+    if ($n -match '(?i)open\s*taiko') { return 'OpenTaiko' }
+    if ($n -match '(?i)taikonauts') { return 'taikonauts' }
+    return ''
+}
+# 名前の最後に付いたシミュレーター名（_TJAP3 など）を外す
+function Remove-SimTag([string]$name) {
+    $t = $name -replace '(?i)[\s_\-]*[\(（\[【]?\s*(tja\s*player\s*3?|tjap3?|open\s*taiko|taikonauts)\s*(版|用)?\s*[\)）\]】]?\s*$', ''
+    if ($t.Trim()) { return $t.Trim() } else { return $name }
+}
+# 本文から、指定した添付（m01_2 など）のシミュレーター行を消す
+function Remove-SimLines([string]$body, [string[]]$stems) {
+    $low = @($stems | ForEach-Object { $_.ToLower() })
+    return ((@($body -split "`r?`n") | Where-Object { -not ($_ -match "^\s*$SimRe\s+(\S+?)\s*[:：]" -and $low -contains $Matches[2].ToLower()) }) -join "`n")
+}
+
 # サイトと同じルールで、リリースの添付をマイドン1体ずつに分ける
 function Get-ReleaseItems($rel) {
     $names = Get-BodyNames ([string]$rel.body)
@@ -326,7 +367,9 @@ function Get-ReleaseItems($rel) {
     }
     $list = @($groups.Values)
     if (-not @($list | Where-Object { $_.Images.Count }).Count) {
-        return @([pscustomobject]@{ Stem = ''; Name = [string]$rel.name; Images = $imgs; Files = $others })
+        $one = @([pscustomobject]@{ Stem = ''; Name = [string]$rel.name; Images = $imgs; Files = $others })
+        Add-FileSims $rel $one
+        return $one
     }
     foreach ($g in $list) {
         if (-not $g.Images.Count) { $g.Images = $loose }
@@ -334,7 +377,18 @@ function Get-ReleaseItems($rel) {
         else { $g.Name = ($g.Name -replace '[_\-\s]*\d+\s*fps$', '') }
     }
     if ($list.Count -eq 1 -and -not $names.ContainsKey($list[0].Stem)) { $list[0].Name = [string]$rel.name }
+    Add-FileSims $rel $list
     return $list
+}
+
+# 各マイドンに、添付ごとのシミュレーター（FileSims：添付ID → 名前）を付ける
+function Add-FileSims($rel, $list) {
+    $fs = Get-BodySims ([string]$rel.body); $def = Get-BodySim ([string]$rel.body)
+    foreach ($g in $list) {
+        $m = @{}
+        foreach ($f in $g.Files) { $k = [IO.Path]::GetFileNameWithoutExtension($f.name).ToLower(); $m[[string]$f.id] = $(if ($fs.ContainsKey($k)) { $fs[$k] } else { $def }) }
+        $g | Add-Member -NotePropertyName FileSims -NotePropertyValue $m -Force
+    }
 }
 
 function Set-BodyCategory([string]$body, [string]$cat) {
@@ -366,28 +420,17 @@ function Invoke-Merge($rels, [string]$title, [string]$cat, [bool]$deleteOld) {
         $progress.Maximum = [Math]::Max(1, $total * 2); $progress.Value = 0
         $nameLines = New-Object System.Collections.Generic.List[string]
         $replaced = New-Object System.Collections.Generic.List[object]
+        $destSim = Get-BodySim ([string]$target.body)
         foreach ($j in $jobs) {
             $id = 'm{0:D2}' -f $n; $n++
             $nameLines.Add("名前 ${id}: $($j.Item.Name)")
-            $k = 0
-            foreach ($a in @($j.Item.Images) + @($j.Item.Files)) {
-                $isImg = $ImageExt -contains [IO.Path]::GetExtension($a.name).ToLower()
-                if ($isImg) { $k++ }
-                $ext = [IO.Path]::GetExtension($a.name).ToLower(); if (-not $ext) { $ext = '.zip' }
-                $idx = if ($isImg) { $k } else { [array]::IndexOf(@($j.Item.Files), $a) + 1 }
-                $fname = if ($idx -le 1) { "$id$ext" } else { "${id}_$idx$ext" }
-                $local = Join-Path $tmp ([guid]::NewGuid().ToString('N') + $ext)
-                $lblStatus.Text = "「$($j.Item.Name)」をダウンロード中… $($a.name)（$(Format-Size $a.size)）"
-                Save-AssetTo $a $local; $progress.Value++
-                $lblStatus.Text = "「$($j.Item.Name)」をアップロード中… $fname"
-                Send-Asset $target.id $local $fname; $progress.Value++
-                Remove-Item $local -Force -ErrorAction SilentlyContinue
-                if ($j.FromTarget) { $replaced.Add($a) }
-            }
+            $sl = Copy-ItemTo $j.Item $target.id $id $tmp $destSim
+            foreach ($l in $sl) { $nameLines.Add($l) }
+            if ($j.FromTarget) { foreach ($a in @($j.Item.Images) + @($j.Item.Files)) { $replaced.Add($a) } }
         }
 
         # 本文：まとめ先の内容（カテゴリやタグなど）を残し、名前の行を付け直す
-        $keep = if ($targetIsTool) { [string]$target.body } else { (@(([string]$target.body) -split "`r?`n") | Where-Object { $_ -notmatch '^\s*名前\s+\S+\s*[:：]' }) -join "`n" }
+        $keep = if ($targetIsTool) { [string]$target.body } else { (@(([string]$target.body) -split "`r?`n") | Where-Object { $_ -notmatch '^\s*名前\s+\S+\s*[:：]' -and $_ -notmatch "^\s*$SimRe\s+\S+\s*[:：]" }) -join "`n" }
         $body = $keep.TrimEnd() + "`n" + ($nameLines -join "`n")
         if ($cat) { $body = Set-BodyCategory $body $cat }
         $lblStatus.Text = '仕上げ中…'
@@ -624,9 +667,13 @@ function Invoke-Batch([string]$csvPath) {
     $seen = New-Object 'System.Collections.Generic.HashSet[string]'
     $norm = { param($t) (([string]$t).Normalize([Text.NormalizationForm]::FormKC) -replace '\s', '').ToLower() }
     $lblStatus.Text = 'サイトにあるマイドンを確認中…'
+    # 被りは「名前＋シミュレーター」で見る（シミュレーター違いは別の版として上げる）
     foreach ($r in @(Invoke-Gh 'GET' '/releases?per_page=100' $null)) {
         if ($r.draft) { continue }
-        foreach ($it in (Get-ReleaseItems $r)) { [void]$seen.Add((& $norm $it.Name)) }
+        foreach ($it in (Get-ReleaseItems $r)) {
+            $sims = @($it.FileSims.Values); if (-not $sims.Count) { $sims = @(Get-BodySim ([string]$r.body)) }
+            foreach ($sv in $sims) { [void]$seen.Add((& $norm $it.Name) + '|' + ([string]$sv).ToLower()) }
+        }
     }
     try {
         $groups = $rows | Group-Object { "$($_.'大分類')`t$($_.'小分類')" }
@@ -639,6 +686,10 @@ function Invoke-Batch([string]$csvPath) {
             $nums = @($rel.assets | ForEach-Object { if ($_.name -match '^m(\d+)') { [int]$Matches[1] } })
             $n = if ($nums.Count) { [int](($nums | Measure-Object -Maximum).Maximum) + 1 } else { 1 }
             $nameLines = New-Object System.Collections.Generic.List[string]
+            $relSim = Get-BodySim ([string]$rel.body)
+            # この小分類にあるマイドン：名前 → { Id, Zip数 }（同じ名前のシミュレーター違いは、ここに zip を足す）
+            $here = @{}
+            foreach ($it in (Get-ReleaseItems $rel)) { if ($it.Stem -match '^m\d+$') { $here[(& $norm $it.Name)] = [pscustomobject]@{ Id = $it.Stem; Zips = @($it.Files).Count } } }
             foreach ($row in $g.Group) {
                 $link = $row.'リンク'.Trim()
                 $work = Join-Path $tmp ([guid]::NewGuid().ToString('N')); New-Item -ItemType Directory -Path $work | Out-Null
@@ -654,21 +705,38 @@ function Invoke-Batch([string]$csvPath) {
                     $items = @()
                     foreach ($f in $files) { $items += Split-Download $f $work $thumbs }
                     if ($row.'名前' -and $items.Count -eq 1) { $items[0].Name = $row.'名前'.Trim() }
+                    $rowSim = ([string]$row.'シミュレーター').Trim()
                     foreach ($it in $items) {
-                        $key = & $norm $it.Name
-                        if ($seen.Contains($key)) { $log.Add("△ $($it.Name)（もうあるので飛ばしました）"); $skipCount++; continue }
+                        $sim = if ($rowSim) { $rowSim } else { $g2 = Guess-Sim $it.Zip; if (-not $g2) { $g2 = Guess-Sim $link }; if ($g2) { $g2 } else { $relSim } }
+                        if (-not ([string]$row.'名前').Trim()) { $it.Name = Remove-SimTag $it.Name }
+                        $nk = & $norm $it.Name
+                        $key = $nk + '|' + $sim.ToLower()
+                        if ($seen.Contains($key)) { $log.Add("△ $($it.Name)（$sim 版がもうあるので飛ばしました）"); $skipCount++; continue }
                         [void]$seen.Add($key)
+                        $ext = [IO.Path]::GetExtension($it.Zip).ToLower(); if (-not $ext) { $ext = '.zip' }
+                        if ($here.ContainsKey($nk)) {
+                            # 同じ名前のマイドンがこの小分類にある → シミュレーター違いの zip として足す
+                            $h = $here[$nk]; $h.Zips++
+                            $fname = "$($h.Id)_$($h.Zips)$ext"
+                            $lblStatus.Text = "「$($it.Name)」に $sim 版を追加中…（$(Format-Size (Get-Item $it.Zip).Length)）"
+                            Send-Asset $rel.id $it.Zip $fname
+                            if ($sim -ne $relSim) { $nameLines.Add("シミュレーター $($h.Id)_$($h.Zips): $sim") }
+                            $okCount++
+                            $log.Add("○ $($it.Name)（$sim 版を追加）")
+                            continue
+                        }
                         $id = 'm{0:D2}' -f $n; $n++
+                        $here[$nk] = [pscustomobject]@{ Id = $id; Zips = 1 }
                         $k = 0
                         foreach ($t in $it.Thumbs) {
                             $k++; $ext = [IO.Path]::GetExtension($t).ToLower()
                             $lblStatus.Text = "「$($it.Name)」の画像をアップロード中…"
                             Send-Asset $rel.id $t $(if ($k -eq 1) { "$id$ext" } else { "${id}_$k$ext" })
                         }
-                        $ext = [IO.Path]::GetExtension($it.Zip).ToLower(); if (-not $ext) { $ext = '.zip' }
                         $lblStatus.Text = "「$($it.Name)」をアップロード中…（$(Format-Size (Get-Item $it.Zip).Length)）"
                         Send-Asset $rel.id $it.Zip "$id$ext"
                         $nameLines.Add("名前 ${id}: $($it.Name)")
+                        if ($sim -ne $relSim) { $nameLines.Add("シミュレーター ${id}: $sim") }
                         $okCount++
                         $log.Add("○ $($it.Name)" + $(if ($it.Note) { "（$($it.Note)）" } else { '' }))
                     }
@@ -793,6 +861,7 @@ $y += 206
 $btnAddM = Add-Control (New-Object System.Windows.Forms.Button) 16 $y 130 30;  $btnAddM.Text = '＋ マイドン追加'
 $btnRename = Add-Control (New-Object System.Windows.Forms.Button) 152 $y 110 30; $btnRename.Text = '名前を変える'
 $btnDelM = Add-Control (New-Object System.Windows.Forms.Button) 268 $y 80 30;  $btnDelM.Text = '削除'
+$btnSim = Add-Control (New-Object System.Windows.Forms.Button) 354 $y 150 30;  $btnSim.Text = 'zipのシミュレーター…'
 
 # 投稿
 $y += 44
@@ -819,7 +888,11 @@ function Update-List {
     foreach ($m in $script:mydons) {
         $it = New-Object System.Windows.Forms.ListViewItem ($m.Name)
         [void]$it.SubItems.Add((($m.Images | ForEach-Object { [IO.Path]::GetFileName($_) }) -join ', '))
-        [void]$it.SubItems.Add((($m.Zips | ForEach-Object { '{0} ({1})' -f [IO.Path]::GetFileName($_), (Format-Size (Get-Item $_).Length) }) -join ', '))
+        $zs = for ($i = 0; $i -lt $m.Zips.Count; $i++) {
+            $z = $m.Zips[$i]; $sim = $m.Sims[$i]
+            '{0} ({1})' -f [IO.Path]::GetFileName($z), (Format-Size (Get-Item $z).Length) + $(if ($sim) { " [$sim]" } else { '' })
+        }
+        [void]$it.SubItems.Add((@($zs) -join ', '))
         [void]$list.Items.Add($it)
     }
     $list.EndUpdate()
@@ -839,7 +912,8 @@ function Ask-Name([string]$suggest) {
 function Add-Mydon([string]$name, $images, $zips) {
     $name = $name.Trim()
     if (-not $name) { return }
-    [void]$script:mydons.Add([pscustomobject]@{ Name = $name; Images = @($images); Zips = @($zips) })
+    $sims = @($zips | ForEach-Object { Guess-Sim $_ })
+    [void]$script:mydons.Add([pscustomobject]@{ Name = $name; Images = @($images); Zips = @($zips); Sims = $sims })
     Update-List
 }
 
@@ -892,7 +966,7 @@ $btnAddM.Add_Click({
     $dlg2.Multiselect = $true
     if ($dlg2.ShowDialog() -ne 'OK') { return }
     $suggest = Get-DefaultName
-    if (-not $suggest) { $suggest = [IO.Path]::GetFileNameWithoutExtension($dlg2.FileNames[0]) }
+    if (-not $suggest) { $suggest = Remove-SimTag ([IO.Path]::GetFileNameWithoutExtension($dlg2.FileNames[0])) }
     Add-Mydon (Ask-Name $suggest) $imgs $dlg2.FileNames
 })
 $list.Add_DragEnter({ if ($_.Data.GetDataPresent([System.Windows.Forms.DataFormats]::FileDrop)) { $_.Effect = 'Copy' } })
@@ -908,7 +982,7 @@ $list.Add_DragDrop({
     foreach ($im in $imgs) { $k = ([IO.Path]::GetFileNameWithoutExtension($im).ToLower() -replace '[_\-\s]\d+$', ''); if ($groups.Contains($k)) { $groups[$k].Images += $im } else { $loose += $im } }
     $paired = @($groups.Values | Where-Object { $_.Images.Count })
     if ($groups.Count -eq 1 -or -not $paired.Count) {
-        $suggest = Get-DefaultName; if (-not $suggest) { $suggest = @($groups.Values)[0].Name }
+        $suggest = Get-DefaultName; if (-not $suggest) { $suggest = Remove-SimTag (@($groups.Values)[0].Name) }
         Add-Mydon (Ask-Name $suggest) $imgs $zips
     } else {
         foreach ($g in $groups.Values) { if (-not $g.Images.Count) { $g.Images = $loose }; Add-Mydon (Ask-Name $g.Name) $g.Images $g.Zips }
@@ -924,6 +998,32 @@ $list.Add_DoubleClick({ $btnRename.PerformClick() })
 $btnDelM.Add_Click({
     if (-not $list.SelectedIndices.Count) { return }
     $script:mydons.RemoveAt($list.SelectedIndices[0]); Update-List
+})
+
+$btnSim.Add_Click({
+    if (-not $list.SelectedIndices.Count) { (Show-Msg ('一覧からマイドンを選んで下さい。')) | Out-Null; return }
+    $m = $script:mydons[$list.SelectedIndices[0]]
+    $def = if ($rbNew.Checked) { $cbSim.Text.Trim() } elseif ($cbExisting.SelectedIndex -ge 0) { Get-BodySim ([string]$script:releases[$cbExisting.SelectedIndex].body) } else { 'taikonauts' }
+    if (-not $def) { $def = 'taikonauts' }
+    $d = New-Object System.Windows.Forms.Form
+    $d.Text = "「$($m.Name)」の zip ごとのシミュレーター"; $d.Font = $font
+    $d.StartPosition = 'CenterParent'; $d.FormBorderStyle = 'FixedDialog'; $d.MaximizeBox = $false; $d.MinimizeBox = $false
+    $l = New-Object System.Windows.Forms.Label; $l.Text = "空のままなら小分類のシミュレーター（$def）になります"; $l.Location = (New-Object System.Drawing.Point (14, 12)); $l.Size = (New-Object System.Drawing.Size (452, 22)); $d.Controls.Add($l)
+    $boxes = @(); $yy = 42
+    for ($i = 0; $i -lt $m.Zips.Count; $i++) {
+        $lz = New-Object System.Windows.Forms.Label; $lz.Text = [IO.Path]::GetFileName($m.Zips[$i]); $lz.AutoEllipsis = $true; $lz.Location = (New-Object System.Drawing.Point (14, ($yy + 4))); $lz.Size = (New-Object System.Drawing.Size (250, 22)); $d.Controls.Add($lz)
+        $cb = New-Object System.Windows.Forms.ComboBox; $cb.Location = (New-Object System.Drawing.Point (270, $yy)); $cb.Size = (New-Object System.Drawing.Size (196, 26)); $d.Controls.Add($cb)
+        @('taikonauts', 'TJAPlayer3', 'OpenTaiko') | ForEach-Object { [void]$cb.Items.Add($_) }
+        $cb.Text = [string]$m.Sims[$i]
+        $boxes += $cb; $yy += 34
+    }
+    $ok = New-Object System.Windows.Forms.Button; $ok.Text = 'OK'; $ok.DialogResult = 'OK'; $ok.Location = (New-Object System.Drawing.Point (274, ($yy + 8))); $ok.Size = (New-Object System.Drawing.Size (92, 30)); $d.Controls.Add($ok)
+    $cancel = New-Object System.Windows.Forms.Button; $cancel.Text = 'やめる'; $cancel.DialogResult = 'Cancel'; $cancel.Location = (New-Object System.Drawing.Point (374, ($yy + 8))); $cancel.Size = (New-Object System.Drawing.Size (92, 30)); $d.Controls.Add($cancel)
+    $d.AcceptButton = $ok; $d.CancelButton = $cancel
+    $d.ClientSize = (New-Object System.Drawing.Size (480, ($yy + 50)))
+    if ($d.ShowDialog($form) -ne 'OK') { return }
+    $m.Sims = @($boxes | ForEach-Object { $_.Text.Trim() })
+    Update-List
 })
 
 $btnPost.Add_Click({
@@ -948,11 +1048,13 @@ $btnPost.Add_Click({
             $baseBody = ($lines -join "`n")
             $desc = $txtDesc.Text.Trim()
             $start = 1
+            $existing = @()
         } else {
             $rel = $script:releases[$cbExisting.SelectedIndex]
             $rel = Invoke-Gh 'GET' "/releases/$($rel.id)" $null
             $baseBody = [string]$rel.body
             $desc = ''
+            $existing = @(Get-ReleaseItems $rel | Where-Object { $_.Stem -match '^m\d+$' })
             $nums = @($rel.assets | ForEach-Object { if ($_.name -match '^m(\d+)') { [int]$Matches[1] } })
             $start = if ($nums.Count) { [int](($nums | Measure-Object -Maximum).Maximum) + 1 } else { 1 }
             # 前からある、名前の付いていないマイドンには、小分類の名前を付けておく
@@ -963,7 +1065,25 @@ $btnPost.Add_Click({
         $total = 0; foreach ($m in $script:mydons) { $total += $m.Images.Count + $m.Zips.Count }
         $progress.Maximum = [Math]::Max(1, $total); $progress.Value = 0
         $n = [int]$start
+        $relSim = Get-BodySim $baseBody
+        $norm = { param($t) (([string]$t).Normalize([Text.NormalizationForm]::FormKC) -replace '\s', '').ToLower() }
         foreach ($m in $script:mydons) {
+            # 同じ名前のマイドンがもうこの小分類にある時は、そのマイドンに zip を足す（シミュレーター違いの版など）
+            $same = @($existing | Where-Object { (& $norm $_.Name) -eq (& $norm $m.Name) }) | Select-Object -First 1
+            if ($same) {
+                $id = $same.Stem
+                $k = @($same.Files).Count
+                for ($i = 0; $i -lt $m.Zips.Count; $i++) {
+                    $z = $m.Zips[$i]; $k++
+                    $ext = [IO.Path]::GetExtension($z).ToLower(); if (-not $ext) { $ext = '.zip' }
+                    $fname = "${id}_$k$ext"
+                    $sim = [string]$m.Sims[$i]; if ($sim -and $sim -ne $relSim) { $nameLines.Add("シミュレーター ${id}_${k}: $sim") }
+                    $lblStatus.Text = "「$($m.Name)」に zip を追加中… $fname（$(Format-Size (Get-Item $z).Length)）"
+                    Send-Asset $rel.id $z $fname; $progress.Value++
+                }
+                $progress.Value = [Math]::Min($progress.Maximum, $progress.Value + $m.Images.Count)
+                continue
+            }
             $id = 'm{0:D2}' -f $n
             $nameLines.Add("名前 ${id}: $($m.Name)")
             $k = 0
@@ -977,6 +1097,7 @@ $btnPost.Add_Click({
             foreach ($z in $m.Zips) {
                 $k++; $ext = [IO.Path]::GetExtension($z).ToLower(); if (-not $ext) { $ext = '.zip' }
                 $fname = if ($k -eq 1) { "$id$ext" } else { "${id}_$k$ext" }
+                $sim = [string]$m.Sims[$k - 1]; if ($sim -and $sim -ne $relSim) { $nameLines.Add("シミュレーター $([IO.Path]::GetFileNameWithoutExtension($fname)): $sim") }
                 $lblStatus.Text = "「$($m.Name)」の zip をアップロード中… $fname（$(Format-Size (Get-Item $z).Length)）"
                 Send-Asset $rel.id $z $fname; $progress.Value++
             }
