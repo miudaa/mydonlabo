@@ -202,6 +202,9 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
 #termsX{z-index:2}
 .sushibtn{color:var(--muted)}
 .sushibtn:hover{color:var(--ink)}
+.rainbow{font-weight:700;background:linear-gradient(90deg,#ff3b5c,#ff9b1a,#f2c200,#2fbf4a,#1fa6ff,#7a5cff,#e04bd6,#ff3b5c,#ff9b1a,#f2c200,#2fbf4a,#1fa6ff,#7a5cff,#e04bd6,#ff3b5c);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:rainbow 3s linear infinite}
+@keyframes rainbow{to{background-position:-200% 0}}
+@media (prefers-reduced-motion: reduce){.rainbow{animation:none}}
 .tbody .godds{margin:22px 0 8px;text-align:center}
 .oddsbtn{background:none;border:1px dashed var(--line);border-radius:6px;color:var(--muted);font:inherit;font-size:12px;padding:5px 12px;cursor:pointer}
 .oddsbtn:hover{color:var(--ink);border-color:var(--muted)}
@@ -720,7 +723,7 @@ function showTerms(gacha){
   let html = '<h1 id="termsTitle">マイドンラボへようこそ</h1><p class="tsub">＜このサイトでのルール＞</p>', inList = false;
   TERMS.forEach(([k, v], i) => {
     // 寿司ネタは、文の途中の「、」「。」のあと（なければ最後）にそっと入れる
-    if (i === at) { const m = [...v.matchAll(/[、。]/g)].filter(x => x.index < v.length - 1 && !v.slice(0, x.index).includes('<a')); const p = m.length ? m[Math.floor(Math.random() * m.length)].index + 1 : v.length; v = v.slice(0, p) + neta + v.slice(p); }
+    if (i === at) { const m = [...v.matchAll(/[、。]/g)].filter(x => x.index < v.length - 1 && !v.slice(0, x.index).includes('<a')); const p = m.length ? m[Math.floor(Math.random() * m.length)].index + 1 : v.length; v = v.slice(0, p) + (pick === RARE.neta ? `<span class="rainbow">${neta}</span>` : neta) + v.slice(p); }   // レアネタだけ虹色に
     if (k === 'li' && !inList) { html += '<ul>'; inList = true; }
     if (k !== 'li' && inList) { html += '</ul>'; inList = false; }
     html += k === 'li' ? `<li>${v}</li>` : k === 'sub' ? `<p class="tsub">${v}</p>` : `<${k}>${v}</${k}>`;
