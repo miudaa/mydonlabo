@@ -353,9 +353,11 @@ function demoPosts(){
 }
 
 // ----- 表示 -----
+// 大分類・小分類は、作られた順（古い順）に並べる。リリースの番号は作った順に増えるので、それで比べる
+const byCreated = (a, b) => (Number(a.rid) - Number(b.rid)) || natural(a.rtitle, b.rtitle);
 function buildCats(){
   const seen = [];
-  for (const p of S.posts) if (p.cat && !seen.includes(p.cat)) seen.push(p.cat);
+  for (const p of [...S.posts].sort(byCreated)) if (p.cat && !seen.includes(p.cat)) seen.push(p.cat);
   const ordered = CATEGORY_ORDER.filter(c => seen.includes(c));
   S.cats = [...ordered, ...seen.filter(c => !ordered.includes(c))];
   S.items = S.posts.flatMap(p => p.items);
@@ -363,7 +365,7 @@ function buildCats(){
 const inCat = (x, c) => c === 'all' ? true : c === 'none' ? !x.cat : x.cat === c;
 const isSearching = () => !!S.q.trim() || S.bmOnly;
 function postsInCat(){
-  return S.posts.filter(p => inCat(p, S.cat)).sort((a, b) => S.sort === 'old' ? a.date.localeCompare(b.date) : S.sort.startsWith('name') ? natural(a.rtitle, b.rtitle) * (S.sort === 'name-desc' ? -1 : 1) : b.date.localeCompare(a.date));
+  return S.posts.filter(p => inCat(p, S.cat)).sort(byCreated);
 }
 
 function renderTabs(){
@@ -482,7 +484,7 @@ function renderGrid(){
     // 大分類ごとに見出しを付け、その中を小分類ごとにまとめる（フォルダのように）
     const cats = [...S.cats, ...(S.posts.some(p => !p.cat) ? ['none'] : [])];
     html = cats.map(c => {
-      const posts = S.posts.filter(p => inCat(p, c)).sort((a, b) => S.sort === 'old' ? a.date.localeCompare(b.date) : S.sort.startsWith('name') ? natural(a.rtitle, b.rtitle) * (S.sort === 'name-desc' ? -1 : 1) : b.date.localeCompare(a.date));
+      const posts = S.posts.filter(p => inCat(p, c)).sort(byCreated);
       let n = 0;
       const tiles = posts.map(p => {
         const items = sortItems(p.items.filter(passes)); n += items.length;
