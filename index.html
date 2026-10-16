@@ -213,22 +213,22 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
 #gold{position:fixed;inset:0;z-index:200;overflow:hidden;cursor:pointer;display:grid;place-items:center;background:#fff3c4 url(gacha_bg.jpg) center/cover no-repeat}
 .gconf{position:absolute;inset:0;pointer-events:none}
 .gconf i{position:absolute;top:-8%;left:var(--x);width:var(--s);height:var(--s);background:#fff;opacity:.9;animation:gfall var(--d) linear infinite;animation-delay:var(--t)}
-.gtitle{position:relative;margin:0 0 6vh;display:flex;justify-content:center;font:900 min(12vw,150px)/1 "Hiragino Maru Gothic ProN","Hiragino Sans","BIZ UDPGothic","Yu Gothic UI","Meiryo",sans-serif;letter-spacing:-.04em;animation:gslam .5s cubic-bezier(.3,1.6,.5,1) both}
-.gtitle .ch{position:relative;display:inline-block;transform:rotate(var(--r)) translateY(var(--y))}
-.gtitle .ch b,.gtitle .ch u,.gtitle .ch s{display:block;font:inherit;text-decoration:none}
-.gtitle .ch b{position:absolute;inset:0;color:#140700;-webkit-text-stroke:.26em #140700}
-.gtitle .ch u{position:absolute;inset:0;color:#b54a06;-webkit-text-stroke:.12em #b54a06}
-.gtitle .ch s{position:relative;color:#ff9b16;background:linear-gradient(180deg,#fffbd0 10%,#ffe14a 32%,#ffb21e 52%,#ff8a0a 70%,#d9560a 92%);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-.gtitle{flex-wrap:wrap}
-.gtitle .br{flex-basis:100%;height:0;display:none}
-@media (max-aspect-ratio:1/1){.gtitle{font-size:min(24vw,150px);line-height:1.1}.gtitle .br{display:block}}
+.gmain{position:relative;display:grid;justify-items:center;gap:2.2vh;padding:16px;margin-bottom:4vh;pointer-events:none}
+.gtitle{margin:0;animation:gslam .5s cubic-bezier(.3,1.6,.5,1) both}
+.gtitle img{display:block;width:min(92vw,1180px);height:auto}
+.gline{margin:0;animation:gfade .5s ease-out both}
+.gsub img{display:block;height:clamp(26px,5.2vh,52px);width:auto;max-width:90vw}
+.gmsg{animation-delay:.45s}
+.gmsg img{display:block;height:clamp(40px,8vh,84px);width:auto;max-width:90vw}
+@media (max-aspect-ratio:1/1){.gtitle img{width:min(80vw,520px)}}
 .gok{position:absolute;inset:0;width:100%;height:100%;background:none;border:0;cursor:pointer}
 .gok:focus-visible{outline:3px solid #fff;outline-offset:-8px}
 .tbox.goldbox{border-color:#e0a400;box-shadow:0 0 0 2px #ffd44a,0 0 40px 8px rgba(255,212,74,.8);animation:gglow 1.4s ease-in-out infinite alternate}
 @keyframes gfall{to{transform:translateY(118vh) rotate(540deg) rotateX(720deg)}}
+@keyframes gfade{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
 @keyframes gslam{from{transform:scale(2.2);opacity:0}60%{opacity:1}to{transform:none}}
 @keyframes gglow{to{box-shadow:0 0 0 2px #fff3b0,0 0 70px 18px rgba(255,212,74,.95)}}
-@media (prefers-reduced-motion: reduce){.gtitle,.gconf,.tbox.goldbox{animation:none!important}.gconf{display:none}}
+@media (prefers-reduced-motion: reduce){.gtitle,.gline,.gconf,.tbox.goldbox{animation:none!important}.gconf{display:none}}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 </style>
 </head>
@@ -267,7 +267,9 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
   <p class="terr" id="termsErr" role="alert"></p></div></div></div>
 <div id="gold" hidden role="dialog" aria-modal="true" aria-labelledby="goldTitle">
   <div class="gconf" id="gconf"></div>
-  <h2 id="goldTitle" class="gtitle" aria-label="まぐろたたき納豆"></h2>
+  <div class="gmain"><p class="gline gsub"><img src="gacha_sub.svg" alt="寿司ガチャ 0.5% 大当たり！"></p>
+    <h2 id="goldTitle" class="gtitle"><picture><source media="(max-aspect-ratio: 1/1)" srcset="gacha_title_v.svg"><img src="gacha_title.svg" alt="まぐろたたき納豆"></picture></h2>
+    <p class="gline gmsg"><img src="gacha_msg.svg" alt="おめでとうございます！ 200回に1回のレアネタを引き当てました"></p></div>
   <button class="gok" id="goldOk" type="button" aria-label="とじる"></button></div>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="modal" hidden><div class="mbox" role="dialog" aria-modal="true"><button class="x" id="mclose" aria-label="閉じる">×</button><div id="mbody"></div></div></div>
@@ -754,9 +756,6 @@ function celebrate(){
   const g = $('#gold');
   // 紙吹雪（白い紙をひらひら）
   $('#gconf').innerHTML = Array.from({ length: 40 }, () => `<i style="--x:${Math.random() * 100}%;--s:${8 + Math.random() * 12}px;--d:${4 + Math.random() * 4}s;--t:${-Math.random() * 8}s"></i>`).join('');
-  // 文字は1文字ずつ、黒と茶の縁取りに金→オレンジ。少しずつ傾けて手書きの看板っぽく
-  const tilt = [-4, 3, -2, 4, -3, 2, -1, 3];
-  $('#goldTitle').innerHTML = [...RARE.neta[0]].map((c, i) => `<span class="ch" style="--r:${tilt[i % tilt.length]}deg;--y:${i % 2 ? '-4%' : '3%'}" aria-hidden="true"><b>${c}</b><u>${c}</u><s>${c}</s></span>${i === 2 || i === 5 ? '<span class="br"></span>' : ''}`).join('');   // 縦長の画面では「まぐろ／たたき／納豆」の3行に
   g.hidden = false; document.body.style.overflow = 'hidden';
   setTimeout(() => $('#goldOk').focus(), 50);
 }
