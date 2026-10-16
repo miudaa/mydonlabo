@@ -181,6 +181,23 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
   .dinfo{padding-top:24px;min-width:0}
   .dinfo h2{margin-top:0;font-size:18px}
 }
+/* 利用規約 */
+#terms{position:fixed;inset:0;z-index:100;background:var(--scrim);display:flex;align-items:center;justify-content:center;padding:16px}
+.tbox{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:12px;width:100%;max-width:640px;max-height:92vh;display:flex;flex-direction:column;overflow:hidden}
+.tbody{overflow:auto;padding:20px 22px 8px;line-height:1.75}
+.tbody h1{margin:0 0 4px;font-size:20px}
+.tbody h2{margin:20px 0 6px;font-size:15px;padding-left:8px;border-left:3px solid var(--strong)}
+.tbody h3{margin:18px 0 4px;font-size:14px}
+.tbody ul{margin:0;padding-left:1.3em}
+.tbody li{margin:2px 0}
+.tbody .tsub{color:var(--muted);font-size:11px;margin:2px 0 0}
+.tbody a{color:var(--strong);word-break:break-all}
+.tfoot{border-top:1px solid var(--line);padding:14px 22px 16px;background:var(--bagbg)}
+.tfoot p{margin:0 0 8px;font-size:12px}
+.tfoot form{display:flex;gap:8px}
+.tfoot input{flex:1;min-width:0;font-size:15px;padding:8px 10px}
+.tfoot .btn{padding:8px 16px}
+.terr{color:#d33b3b;font-size:12px;min-height:1.4em;margin:6px 0 0}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 </style>
 </head>
@@ -213,6 +230,10 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
   </div>
   </section>
 </main>
+<div id="terms" hidden><div class="tbox" role="dialog" aria-modal="true" aria-labelledby="termsTitle"><div class="tbody" id="termsBody"></div>
+  <div class="tfoot"><p>この規約のどこかに<b>お寿司のネタ</b>が1つまぎれています。見つけて入力すると、サイトを使えます。</p>
+  <form id="termsForm" autocomplete="off"><input id="termsIn" type="text" placeholder="お寿司のネタ" aria-label="規約の中のお寿司のネタ"><button class="btn primary" type="submit">同意して入る</button></form>
+  <p class="terr" id="termsErr" role="alert"></p></div></div></div>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="modal" hidden><div class="mbox" role="dialog" aria-modal="true"><button class="x" id="mclose" aria-label="閉じる">×</button><div id="mbody"></div></div></div>
 
@@ -626,7 +647,58 @@ $('#mbody').addEventListener('click', async e => {
     setTimeout(() => { b.textContent = 'URLコピー'; b.classList.remove('done'); }, 1600);
   } else toast('コピーできませんでした。リンクを長押ししてコピーして下さい');
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').hidden && $('#terms').hidden) closeModal(); });
+
+// ----- 利用規約（最初に表示。中にまぎれた寿司ネタを入力したら入れる） -----
+const TERMS_KEY = 'mydon-terms', TERMS_VER = '2026-10-16';   // 規約を書き換えたら日付を変えると、もう一度表示されます
+const SUSHI = ['まぐろ', 'サーモン', 'えんがわ', 'いくら', 'うに', 'はまち', 'えび', 'たまご', 'いか', 'たこ', 'あなご', 'ほたて', 'ねぎとろ', 'しめさば', 'あじ', 'ぶり', 'かんぱち', 'とびっこ', 'つぶがい', 'かずのこ'];
+const DC = 'https://discordapp.com/channels/1558703876973011006/';
+const TERMS = [
+  ['h2', '1. マイドンラボ に関して'],
+  ['li', 'マイドンラボは絶賛開発中です！'],
+  ['li', 'リクエスト・意見は歓迎しております。'],
+  ['li', '過度なクレクレ行為に関しては厳しく取り締まります。'],
+  ['li', '意見・提案・報告などは<u>discordの専用チャンネルに投稿してください。</u>'],
+  ['h2', '2. サイト上での禁止事項'],
+  ['li', 'このサーバーでは解析などを使用して生成したアセットを含みます。そのような事象において理解できる方のみサーバーをご利用ください。'],
+  ['li', 'マイドンの無断二次配布を禁じます。'],
+  ['li', 'touhou_renren氏及びTaikøNauts開発チームの方々に迷惑をかけないようにサイトを利用し、基本的にこのサイトの内容はTaikøNauts official server内では控えていただきますようお願いいたします。'],
+  ['sub', '（touhou_renren氏及びTaikøNauts開発チームの方々に迷惑がかかったと判断した場合このサイト及びサーバーを削除いたします。）'],
+  ['h2', '3. マイドン配布・リクエストについて'],
+  ['li', `<a href="${DC}1558720003371565056" target="_blank" rel="noopener">${DC}1558720003371565056</a> においてマイドンの配布を行います。<br>また、このサイトでも配布しておりますが、配布通知などを受け取ることができ便利です。`],
+  ['li', `リクエストは<a href="${DC}1558719534452572281" target="_blank" rel="noopener">${DC}1558719534452572281</a> からお願いします`],
+  ['h3', '招待リンク'],
+  ['p', '<a href="https://discord.gg/Qa2SDrAntx" target="_blank" rel="noopener">https://discord.gg/Qa2SDrAntx</a>'],
+];
+const kana = t => String(t).normalize('NFKC').trim().replace(/[\s　]/g, '').replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60)).replace(/ー/g, '-');
+function showTerms(){
+  // 規約にもともと入っている言葉（「ように」の「うに」など）は、まぎらわしいので使わない
+  const base = kana(TERMS.map(t => t[1].replace(/<[^>]+>/g, '')).join(''));
+  const pool = SUSHI.filter(n => !base.includes(kana(n)));
+  const neta = pool[Math.floor(Math.random() * pool.length)];
+  const spots = TERMS.map((t, i) => (t[0] === 'li' || t[0] === 'sub') ? i : -1).filter(i => i >= 0);
+  const at = spots[Math.floor(Math.random() * spots.length)];
+  let html = '<h1 id="termsTitle">マイドンラボへようこそ</h1><p class="tsub">＜このサイトでのルール＞</p>', inList = false;
+  TERMS.forEach(([k, v], i) => {
+    // 寿司ネタは、文の途中の「、」「。」のあと（なければ最後）にそっと入れる
+    if (i === at) { const m = [...v.matchAll(/[、。]/g)].filter(x => x.index < v.length - 1 && !v.slice(0, x.index).includes('<a')); const p = m.length ? m[Math.floor(Math.random() * m.length)].index + 1 : v.length; v = v.slice(0, p) + neta + v.slice(p); }
+    if (k === 'li' && !inList) { html += '<ul>'; inList = true; }
+    if (k !== 'li' && inList) { html += '</ul>'; inList = false; }
+    html += k === 'li' ? `<li>${v}</li>` : k === 'sub' ? `<p class="tsub">${v}</p>` : `<${k}>${v}</${k}>`;
+  });
+  if (inList) html += '</ul>';
+  $('#termsBody').innerHTML = html;
+  $('#terms').hidden = false; document.body.style.overflow = 'hidden';
+  $('#termsForm').onsubmit = e => {
+    e.preventDefault();
+    if (kana($('#termsIn').value) === kana(neta)) {
+      try { localStorage.setItem(TERMS_KEY, TERMS_VER); } catch {}
+      $('#terms').hidden = true; document.body.style.overflow = '';
+    } else { $('#termsErr').textContent = 'ちがうみたいです。規約をもう一度読んで、まぎれているネタを探してみて下さい。'; $('#termsIn').select(); }
+  };
+  setTimeout(() => $('#termsIn').focus({ preventScroll: true }), 50);
+}
+try { if (localStorage.getItem(TERMS_KEY) !== TERMS_VER) showTerms(); } catch { showTerms(); }
 
 // ----- 起動 -----
 (async () => {
