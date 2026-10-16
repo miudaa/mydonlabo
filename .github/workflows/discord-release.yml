@@ -1,0 +1,53 @@
+name: Discord Release Notify
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send release to Discord
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -e
+
+          # アセットのアップロードが終わるまで待つ（最大10分）
+          for i in $(seq 1 40); do
+            json=$(gh api "repos/$REPO/releases/tags/$TAG")
+            pending=$(echo "$json" | jq '[.assets[] | select(.state != "uploaded")] | length')
+            zips=$(echo "$json" | jq '[.assets[] | select(.name | test("\\.zip$"; "i"))] | length')
+            pngs=$(echo "$json" | jq '[.assets[] | select(.name | test("\\.png$"; "i"))] | length')
+            if [ "$pending" = 0 ] && [ "$zips" -gt 0 ] && [ "$pngs" -gt 0 ]; then break; fi
+            sleep 15
+          done
+
+          # png をダウンロード（最大10枚）
+          mkdir -p assets
+          gh release download "$TAG" -R "$REPO" -D assets -p "*.png" -p "*.PNG" || true
+
+          # 本文：マイドンの名前＋zipの直リンク
+          payload=$(echo "$json" | jq '
+            ( ["**" + (.name // .tag_name) + "**"]
+              + [ .assets[] | select(.name | test("\\.zip$"; "i"))
+                  | "[\(.name)](\(.browser_download_url))" ]
+            ) | join("\n") | .[0:2000]
+            | { username: "マイドンラボ", content: ., allowed_mentions: { parse: [] } }')
+
+          args=(-F "payload_json=$payload")
+          i=0
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            args+=(-F "files[$i]=@assets/$f")
+            i=$((i+1))
+          done <<< "$(ls assets 2>/dev/null | head -n 10)"
+
+          curl -sS -f "${args[@]}" "$DISCORD_WEBHOOK_URL"
