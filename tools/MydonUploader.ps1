@@ -490,6 +490,74 @@ function Show-MergeDialog {
     } finally { $btnPost.Enabled = $true; $btnMerge.Enabled = $true }
 }
 
+# ---------- 大分類を移動（小分類ごと、別の大分類へ） ----------
+function Get-BodyCat([string]$body) {
+    foreach ($line in ($body -split "`r?`n")) { if ($line -match '^\s*(カテゴリ|category)\s*[:：;；]\s*(.+?)\s*$') { return $Matches[2] } }
+    return ''
+}
+function Show-CatMoveDialog {
+    if (-not $script:token) { (Show-Msg ('先に「トークン設定」をして下さい。')) | Out-Null; return }
+    if (-not $script:releases.Count) { Load-Releases }
+    if (-not $script:releases.Count) { (Show-Msg ('小分類がまだありません。')) | Out-Null; return }
+    $P = { param($x, $y) New-Object System.Drawing.Point ($x, $y) }
+    $S = { param($w, $h) New-Object System.Drawing.Size ($w, $h) }
+    $d = New-Object System.Windows.Forms.Form
+    $d.Text = '大分類を移動'; $d.Font = $font; $d.ClientSize = (& $S 460 470)
+    $d.StartPosition = 'CenterParent'; $d.FormBorderStyle = 'FixedDialog'; $d.MaximizeBox = $false; $d.MinimizeBox = $false
+    $l0 = New-Object System.Windows.Forms.Label; $l0.Text = '大分類で絞る'; $l0.Location = (& $P 14 16); $l0.Size = (& $S 100 22); $d.Controls.Add($l0)
+    $cFilter = New-Object System.Windows.Forms.ComboBox; $cFilter.DropDownStyle = 'DropDownList'; $cFilter.Location = (& $P 116 12); $cFilter.Size = (& $S 330 26); $d.Controls.Add($cFilter)
+    $cats = @($script:releases | ForEach-Object { $c = Get-BodyCat ([string]$_.body); if ($c) { $c } else { 'その他' } } | Select-Object -Unique)
+    [void]$cFilter.Items.Add('（すべて）'); foreach ($c in $cats) { [void]$cFilter.Items.Add($c) }
+    $l1 = New-Object System.Windows.Forms.Label; $l1.Text = '移す小分類にチェック'; $l1.Location = (& $P 14 50); $l1.Size = (& $S 300 22); $d.Controls.Add($l1)
+    $bAll = New-Object System.Windows.Forms.Button; $bAll.Text = '全部'; $bAll.Location = (& $P 316 46); $bAll.Size = (& $S 64 26); $d.Controls.Add($bAll)
+    $bNone = New-Object System.Windows.Forms.Button; $bNone.Text = '外す'; $bNone.Location = (& $P 382 46); $bNone.Size = (& $S 64 26); $d.Controls.Add($bNone)
+    $clb = New-Object System.Windows.Forms.CheckedListBox; $clb.Location = (& $P 14 76); $clb.Size = (& $S 432 230); $clb.CheckOnClick = $true; $d.Controls.Add($clb)
+    $l2 = New-Object System.Windows.Forms.Label; $l2.Text = '移動先の大分類（新しい名前を入れてもOK）'; $l2.Location = (& $P 14 318); $l2.Size = (& $S 432 22); $d.Controls.Add($l2)
+    $cDst = New-Object System.Windows.Forms.ComboBox; $cDst.Location = (& $P 14 342); $cDst.Size = (& $S 432 26); $d.Controls.Add($cDst)
+    foreach ($c in $cats) { if ($c -ne 'その他') { [void]$cDst.Items.Add($c) } }
+    $l3 = New-Object System.Windows.Forms.Label; $l3.Text = '※ 中のマイドンはそのまま。小分類ごと別のタブに移ります'; $l3.ForeColor = [System.Drawing.Color]::DimGray; $l3.Location = (& $P 14 378); $l3.Size = (& $S 432 22); $d.Controls.Add($l3)
+    $ok = New-Object System.Windows.Forms.Button; $ok.Text = '移動する'; $ok.Location = (& $P 254 426); $ok.Size = (& $S 92 30); $d.Controls.Add($ok)
+    $cancel = New-Object System.Windows.Forms.Button; $cancel.Text = 'やめる'; $cancel.Location = (& $P 354 426); $cancel.Size = (& $S 92 30); $cancel.DialogResult = 'Cancel'; $d.Controls.Add($cancel)
+    $d.CancelButton = $cancel
+    $script:catRows = @()
+    $fill = {
+        $clb.Items.Clear(); $script:catRows = @()
+        foreach ($r in $script:releases) {
+            $c = Get-BodyCat ([string]$r.body); $cv = if ($c) { $c } else { 'その他' }
+            if ($cFilter.SelectedIndex -gt 0 -and $cv -ne [string]$cFilter.SelectedItem) { continue }
+            $script:catRows += $r; [void]$clb.Items.Add("$($r.name)（$cv）")
+        }
+    }
+    $cFilter.Add_SelectedIndexChanged($fill)
+    $bAll.Add_Click({ for ($i = 0; $i -lt $clb.Items.Count; $i++) { $clb.SetItemChecked($i, $true) } })
+    $bNone.Add_Click({ for ($i = 0; $i -lt $clb.Items.Count; $i++) { $clb.SetItemChecked($i, $false) } })
+    $ok.Add_Click({
+        if ($clb.CheckedIndices.Count -lt 1) { (Show-Msg ('移す小分類を1つ以上チェックして下さい。')) | Out-Null; return }
+        if (-not $cDst.Text.Trim()) { (Show-Msg ('移動先の大分類を入れて下さい。')) | Out-Null; return }
+        $d.DialogResult = 'OK'; $d.Close()
+    })
+    $cFilter.SelectedIndex = 0
+    if ($d.ShowDialog($form) -ne 'OK') { return }
+    $sel = @($clb.CheckedIndices | ForEach-Object { $script:catRows[$_] })
+    $cat = $cDst.Text.Trim()
+    $btnPost.Enabled = $false; $btnCatMove.Enabled = $false
+    $progress.Maximum = $sel.Count; $progress.Value = 0
+    $done = 0
+    try {
+        foreach ($r in $sel) {
+            $lblStatus.Text = "「$($r.name)」を「$cat」へ移動中…"
+            $fresh = Invoke-Gh 'GET' "/releases/$($r.id)" $null
+            Invoke-Gh 'PATCH' "/releases/$($r.id)" @{ body = (Set-BodyCategory ([string]$fresh.body) $cat) } | Out-Null
+            $done++; $progress.Value = $done
+        }
+        $lblStatus.Text = "移動しました！ $done 件の小分類を「$cat」へ移しました。サイトを再読み込みすると出ます。"
+        Load-Releases
+    } catch {
+        $lblStatus.Text = 'エラー：' + $_.Exception.Message
+        (Show-Msg ("途中で止まりました（$done 件は移動済み）。`n`n$($_.Exception.Message)")) | Out-Null
+    } finally { $btnPost.Enabled = $true; $btnCatMove.Enabled = $true }
+}
+
 # ---------- 一括投稿（一覧ファイルから） ----------
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -830,7 +898,9 @@ $btnMerge.Text = '小分類をまとめる…'
 # 項目
 $y = 124
 Add-Label '大分類' 16 $y | Out-Null
-$cbCat = Add-Control (New-Object System.Windows.Forms.ComboBox) 130 $y 474
+$cbCat = Add-Control (New-Object System.Windows.Forms.ComboBox) 130 $y 320
+$btnCatMove = Add-Control (New-Object System.Windows.Forms.Button) 456 ($y - 1) 148 28
+$btnCatMove.Text = '大分類を移動…'
 $y += 36; Add-Label '小分類の名前' 16 $y | Out-Null
 $txtTitle = Add-Control (New-Object System.Windows.Forms.TextBox) 130 $y 474
 $y += 36; Add-Label 'タグ' 16 $y | Out-Null
@@ -952,6 +1022,7 @@ $rbAdd.Add_CheckedChanged({ Update-Mode })
 $btnReload.Add_Click({ Load-Releases })
 $btnMerge.Add_Click({ Show-MergeDialog })
 $btnMove.Add_Click({ Show-MoveDialog })
+$btnCatMove.Add_Click({ Show-CatMoveDialog })
 $btnBatch.Add_Click({ Start-Batch })
 
 $btnAddM.Add_Click({
