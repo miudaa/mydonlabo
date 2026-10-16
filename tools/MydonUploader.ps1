@@ -501,61 +501,94 @@ function Show-CatMoveDialog {
     if (-not $script:releases.Count) { (Show-Msg ('小分類がまだありません。')) | Out-Null; return }
     $P = { param($x, $y) New-Object System.Drawing.Point ($x, $y) }
     $S = { param($w, $h) New-Object System.Drawing.Size ($w, $h) }
+    $catOf = { param($r) $c = Get-BodyCat ([string]$r.body); if ($c) { $c } else { 'その他' } }
     $d = New-Object System.Windows.Forms.Form
-    $d.Text = '大分類を移動'; $d.Font = $font; $d.ClientSize = (& $S 460 470)
+    $d.Text = '大分類を移動'; $d.Font = $font; $d.ClientSize = (& $S 460 540)
     $d.StartPosition = 'CenterParent'; $d.FormBorderStyle = 'FixedDialog'; $d.MaximizeBox = $false; $d.MinimizeBox = $false
-    $l0 = New-Object System.Windows.Forms.Label; $l0.Text = '大分類で絞る'; $l0.Location = (& $P 14 16); $l0.Size = (& $S 100 22); $d.Controls.Add($l0)
-    $cFilter = New-Object System.Windows.Forms.ComboBox; $cFilter.DropDownStyle = 'DropDownList'; $cFilter.Location = (& $P 116 12); $cFilter.Size = (& $S 330 26); $d.Controls.Add($cFilter)
-    $cats = @($script:releases | ForEach-Object { $c = Get-BodyCat ([string]$_.body); if ($c) { $c } else { 'その他' } } | Select-Object -Unique)
+    $rWhole = New-Object System.Windows.Forms.RadioButton; $rWhole.Text = '小分類ごと移す'; $rWhole.Checked = $true; $rWhole.Location = (& $P 14 10); $rWhole.Size = (& $S 160 24); $d.Controls.Add($rWhole)
+    $rEach = New-Object System.Windows.Forms.RadioButton; $rEach.Text = 'どんちゃん1体ずつ移す'; $rEach.Location = (& $P 180 10); $rEach.Size = (& $S 260 24); $d.Controls.Add($rEach)
+    $l0 = New-Object System.Windows.Forms.Label; $l0.Text = '大分類で絞る'; $l0.Location = (& $P 14 46); $l0.Size = (& $S 100 22); $d.Controls.Add($l0)
+    $cFilter = New-Object System.Windows.Forms.ComboBox; $cFilter.DropDownStyle = 'DropDownList'; $cFilter.Location = (& $P 116 42); $cFilter.Size = (& $S 330 26); $d.Controls.Add($cFilter)
+    $cats = @($script:releases | ForEach-Object { & $catOf $_ } | Select-Object -Unique)
     [void]$cFilter.Items.Add('（すべて）'); foreach ($c in $cats) { [void]$cFilter.Items.Add($c) }
-    $l1 = New-Object System.Windows.Forms.Label; $l1.Text = '移す小分類にチェック'; $l1.Location = (& $P 14 50); $l1.Size = (& $S 300 22); $d.Controls.Add($l1)
-    $bAll = New-Object System.Windows.Forms.Button; $bAll.Text = '全部'; $bAll.Location = (& $P 316 46); $bAll.Size = (& $S 64 26); $d.Controls.Add($bAll)
-    $bNone = New-Object System.Windows.Forms.Button; $bNone.Text = '外す'; $bNone.Location = (& $P 382 46); $bNone.Size = (& $S 64 26); $d.Controls.Add($bNone)
-    $clb = New-Object System.Windows.Forms.CheckedListBox; $clb.Location = (& $P 14 76); $clb.Size = (& $S 432 230); $clb.CheckOnClick = $true; $d.Controls.Add($clb)
-    $l2 = New-Object System.Windows.Forms.Label; $l2.Text = '移動先の大分類（新しい名前を入れてもOK）'; $l2.Location = (& $P 14 318); $l2.Size = (& $S 432 22); $d.Controls.Add($l2)
-    $cDst = New-Object System.Windows.Forms.ComboBox; $cDst.Location = (& $P 14 342); $cDst.Size = (& $S 432 26); $d.Controls.Add($cDst)
+    $l1 = New-Object System.Windows.Forms.Label; $l1.Location = (& $P 14 80); $l1.Size = (& $S 300 22); $d.Controls.Add($l1)
+    $bAll = New-Object System.Windows.Forms.Button; $bAll.Text = '全部'; $bAll.Location = (& $P 316 76); $bAll.Size = (& $S 64 26); $d.Controls.Add($bAll)
+    $bNone = New-Object System.Windows.Forms.Button; $bNone.Text = '外す'; $bNone.Location = (& $P 382 76); $bNone.Size = (& $S 64 26); $d.Controls.Add($bNone)
+    $clb = New-Object System.Windows.Forms.CheckedListBox; $clb.Location = (& $P 14 106); $clb.Size = (& $S 432 230); $clb.CheckOnClick = $true; $d.Controls.Add($clb)
+    $l2 = New-Object System.Windows.Forms.Label; $l2.Text = '移動先の大分類（新しい名前を入れてもOK）'; $l2.Location = (& $P 14 346); $l2.Size = (& $S 432 22); $d.Controls.Add($l2)
+    $cDst = New-Object System.Windows.Forms.ComboBox; $cDst.Location = (& $P 14 370); $cDst.Size = (& $S 432 26); $d.Controls.Add($cDst)
     foreach ($c in $cats) { if ($c -ne 'その他') { [void]$cDst.Items.Add($c) } }
-    $l3 = New-Object System.Windows.Forms.Label; $l3.Text = '※ 中のマイドンはそのまま。小分類ごと別のタブに移ります'; $l3.ForeColor = [System.Drawing.Color]::DimGray; $l3.Location = (& $P 14 378); $l3.Size = (& $S 432 22); $d.Controls.Add($l3)
-    $ok = New-Object System.Windows.Forms.Button; $ok.Text = '移動する'; $ok.Location = (& $P 254 426); $ok.Size = (& $S 92 30); $d.Controls.Add($ok)
-    $cancel = New-Object System.Windows.Forms.Button; $cancel.Text = 'やめる'; $cancel.Location = (& $P 354 426); $cancel.Size = (& $S 92 30); $cancel.DialogResult = 'Cancel'; $d.Controls.Add($cancel)
+    $l4 = New-Object System.Windows.Forms.Label; $l4.Text = '入れる小分類（空なら元と同じ名前の小分類。無ければ作ります）'; $l4.Location = (& $P 14 404); $l4.Size = (& $S 432 22); $d.Controls.Add($l4)
+    $cSub = New-Object System.Windows.Forms.ComboBox; $cSub.Location = (& $P 14 428); $cSub.Size = (& $S 432 26); $d.Controls.Add($cSub)
+    $chk = New-Object System.Windows.Forms.CheckBox; $chk.Text = '移動元の小分類が空になったら削除する'; $chk.Checked = $true; $chk.Location = (& $P 14 460); $chk.Size = (& $S 432 24); $d.Controls.Add($chk)
+    $ok = New-Object System.Windows.Forms.Button; $ok.Text = '移動する'; $ok.Location = (& $P 254 496); $ok.Size = (& $S 92 30); $d.Controls.Add($ok)
+    $cancel = New-Object System.Windows.Forms.Button; $cancel.Text = 'やめる'; $cancel.Location = (& $P 354 496); $cancel.Size = (& $S 92 30); $cancel.DialogResult = 'Cancel'; $d.Controls.Add($cancel)
     $d.CancelButton = $cancel
     $script:catRows = @()
     $fill = {
         $clb.Items.Clear(); $script:catRows = @()
+        $each = $rEach.Checked
+        $l1.Text = if ($each) { '移すどんちゃんにチェック' } else { '移す小分類にチェック' }
+        foreach ($c in @($l4, $cSub, $chk)) { $c.Enabled = $each }
         foreach ($r in $script:releases) {
-            $c = Get-BodyCat ([string]$r.body); $cv = if ($c) { $c } else { 'その他' }
+            $cv = & $catOf $r
             if ($cFilter.SelectedIndex -gt 0 -and $cv -ne [string]$cFilter.SelectedItem) { continue }
-            $script:catRows += $r; [void]$clb.Items.Add("$($r.name)（$cv）")
+            if ($each) {
+                foreach ($it in (Get-ReleaseItems $r)) { $script:catRows += [pscustomobject]@{ Rel = $r; Item = $it }; [void]$clb.Items.Add("$($it.Name)（$($r.name)／$cv）") }
+            } else { $script:catRows += [pscustomobject]@{ Rel = $r; Item = $null }; [void]$clb.Items.Add("$($r.name)（$cv）") }
         }
     }
-    $cFilter.Add_SelectedIndexChanged($fill)
+    $fillSub = {
+        $keep = $cSub.Text; $cSub.Items.Clear()
+        foreach ($r in $script:releases) { if ((& $catOf $r) -eq $cDst.Text.Trim()) { [void]$cSub.Items.Add([string]$r.name) } }
+        $cSub.Text = $keep
+    }
+    $cFilter.Add_SelectedIndexChanged($fill); $rWhole.Add_CheckedChanged($fill); $rEach.Add_CheckedChanged($fill)
+    $cDst.Add_TextChanged($fillSub)
     $bAll.Add_Click({ for ($i = 0; $i -lt $clb.Items.Count; $i++) { $clb.SetItemChecked($i, $true) } })
     $bNone.Add_Click({ for ($i = 0; $i -lt $clb.Items.Count; $i++) { $clb.SetItemChecked($i, $false) } })
     $ok.Add_Click({
-        if ($clb.CheckedIndices.Count -lt 1) { (Show-Msg ('移す小分類を1つ以上チェックして下さい。')) | Out-Null; return }
+        if ($clb.CheckedIndices.Count -lt 1) { (Show-Msg ($(if ($rEach.Checked) { '移すどんちゃんを1体以上チェックして下さい。' } else { '移す小分類を1つ以上チェックして下さい。' }))) | Out-Null; return }
         if (-not $cDst.Text.Trim()) { (Show-Msg ('移動先の大分類を入れて下さい。')) | Out-Null; return }
         $d.DialogResult = 'OK'; $d.Close()
     })
     $cFilter.SelectedIndex = 0
     if ($d.ShowDialog($form) -ne 'OK') { return }
     $sel = @($clb.CheckedIndices | ForEach-Object { $script:catRows[$_] })
-    $cat = $cDst.Text.Trim()
-    $btnPost.Enabled = $false; $btnCatMove.Enabled = $false
-    $progress.Maximum = $sel.Count; $progress.Value = 0
+    $cat = $cDst.Text.Trim(); $sub = $cSub.Text.Trim(); $each = $rEach.Checked; $delEmpty = $chk.Checked
+    foreach ($b in @($btnPost, $btnCatMove, $btnMove, $btnMerge, $btnBatch)) { $b.Enabled = $false }
     $done = 0
     try {
-        foreach ($r in $sel) {
-            $lblStatus.Text = "「$($r.name)」を「$cat」へ移動中…"
-            $fresh = Invoke-Gh 'GET' "/releases/$($r.id)" $null
-            Invoke-Gh 'PATCH' "/releases/$($r.id)" @{ body = (Set-BodyCategory ([string]$fresh.body) $cat) } | Out-Null
-            $done++; $progress.Value = $done
+        if (-not $each) {
+            $progress.Maximum = $sel.Count; $progress.Value = 0
+            foreach ($row in $sel) {
+                $r = $row.Rel
+                $lblStatus.Text = "「$($r.name)」を「$cat」へ移動中…"
+                $fresh = Invoke-Gh 'GET' "/releases/$($r.id)" $null
+                Invoke-Gh 'PATCH' "/releases/$($r.id)" @{ body = (Set-BodyCategory ([string]$fresh.body) $cat) } | Out-Null
+                $done++; $progress.Value = $done
+            }
+            $lblStatus.Text = "移動しました！ $done 件の小分類を「$cat」へ移しました。サイトを再読み込みすると出ます。"
+        } else {
+            # 移動元の小分類ごとにまとめて、移動先の小分類へ移す
+            foreach ($grp in ($sel | Group-Object { $_.Rel.id })) {
+                $srcRel = $grp.Group[0].Rel
+                $title = if ($sub) { $sub } else { [string]$srcRel.name }
+                $dest = @($script:releases | Where-Object { [string]$_.name -eq $title -and (& $catOf $_) -eq $cat }) | Select-Object -First 1
+                if ($dest -and $dest.id -eq $srcRel.id) { continue }
+                $stems = @($grp.Group | ForEach-Object { $_.Item.Stem })
+                $r = Invoke-Move $srcRel $stems $dest $cat $title $delEmpty
+                $done += $r.Count
+                Load-Releases   # 新しく作った小分類を、次の組でも使えるように
+            }
+            $lblStatus.Text = "移動しました！ $done 体を「$cat」へ移しました。サイトを再読み込みすると出ます。"
         }
-        $lblStatus.Text = "移動しました！ $done 件の小分類を「$cat」へ移しました。サイトを再読み込みすると出ます。"
         Load-Releases
     } catch {
         $lblStatus.Text = 'エラー：' + $_.Exception.Message
-        (Show-Msg ("途中で止まりました（$done 件は移動済み）。`n`n$($_.Exception.Message)")) | Out-Null
-    } finally { $btnPost.Enabled = $true; $btnCatMove.Enabled = $true }
+        (Show-Msg ("途中で止まりました（$done 件は移動済み）。`n`n$($_.Exception.Message)`n`n移し終わっていない分は、元の場所に残っています。")) | Out-Null
+        Load-Releases
+    } finally { foreach ($b in @($btnPost, $btnCatMove, $btnMove, $btnMerge, $btnBatch)) { $b.Enabled = $true } }
 }
 
 # ---------- 一括投稿（一覧ファイルから） ----------
