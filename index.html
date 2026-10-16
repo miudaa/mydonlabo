@@ -689,7 +689,8 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal
 // ----- 利用規約（最初に表示。中にまぎれた寿司ネタを入力したら入れる） -----
 const TERMS_KEY = 'mydon-terms', TERMS_VER = '2026-10-16';   // 規約を書き換えたら日付を変えると、もう一度表示されます
 const SUSHI = ['まぐろ', 'サーモン', 'えんがわ', 'いくら', 'うに', 'はまち', 'えび', 'たまご', 'いか', 'たこ', 'あなご', 'ほたて', 'ねぎとろ', 'しめさば', 'あじ', 'ぶり', 'かんぱち', 'とびっこ', 'つぶがい', 'かずのこ'];   // ['表示', '読み方'] のように書くと、読み方で入力してもOK
-const RARE = { neta: ['まぐろたたき納豆', 'まぐろたたきなっとう'], rate: 0.005 };   // レアネタ：0.5% の確率で出る
+const RARE = { neta: ['まぐろたたき納豆', 'まぐろたたきなっとう'], rate: 0.005, key: 'mydon-rare-got' };   // 当てたブラウザだけ確率表に名前が出る
+const rareGot = () => { try { return localStorage.getItem(RARE.key) === '1'; } catch { return false; } };   // レアネタ：0.5% の確率で出る
 const DC = 'https://discordapp.com/channels/1558703876973011006/';
 const TERMS = [
   ['h2', '1. マイドンラボ に関して'],
@@ -729,7 +730,7 @@ function showTerms(gacha){
   const each = (1 - RARE.rate) / pool.length * 100, pct = v => (Math.round(v * 1000) / 1000) + '%';
   html += `<div class="godds"><button type="button" class="oddsbtn" id="oddsBtn" aria-expanded="false">寿司ガチャの確率表</button>
     <table class="odds" id="odds" hidden><thead><tr><th>ネタ</th><th>確率</th></tr></thead><tbody>
-    <tr class="rare"><td>★ ${RARE.neta[0]}</td><td>${pct(RARE.rate * 100)}</td></tr>
+    <tr class="rare"><td>★ ${rareGot() ? RARE.neta[0] : '??????'}</td><td>${pct(RARE.rate * 100)}</td></tr>
     ${pool.map(n => `<tr><td>${n[0]}</td><td>${pct(each)}</td></tr>`).join('')}</tbody></table></div>`;
   $('#termsBody').innerHTML = html;
   $('#oddsBtn').onclick = () => { const t = $('#odds'), b = $('#oddsBtn'); t.hidden = !t.hidden; b.setAttribute('aria-expanded', !t.hidden); };
@@ -745,7 +746,7 @@ function showTerms(gacha){
     e.preventDefault();
     if (pick.some(w => kana(w) === kana($('#termsIn').value))) {
       try { localStorage.setItem(TERMS_KEY, TERMS_VER); } catch {}
-      if (pick === RARE.neta) { $('.tbox').classList.add('goldbox'); setTimeout(() => { closeTerms(); celebrate(); }, 700); }
+      if (pick === RARE.neta) { try { localStorage.setItem(RARE.key, '1'); } catch {} $('.tbox').classList.add('goldbox'); setTimeout(() => { closeTerms(); celebrate(); }, 700); }
       else { closeTerms(); if (gacha) toast(`正解！「${neta}」でした`); }
     } else { $('#termsErr').textContent = 'ちがうみたいです。規約をもう一度読んで、まぎれているネタを探してみて下さい。'; $('#termsIn').select(); }
   };
