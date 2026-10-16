@@ -198,12 +198,40 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
 .tfoot input{flex:1;min-width:0;font-size:15px;padding:8px 10px}
 .tfoot .btn{padding:8px 16px}
 .terr{color:#d33b3b;font-size:12px;min-height:1.4em;margin:6px 0 0}
+.tbox{position:relative}
+#termsX{z-index:2}
+.sushibtn{color:var(--muted)}
+.sushibtn:hover{color:var(--ink)}
+.tbody .godds{margin:22px 0 8px;text-align:center}
+.oddsbtn{background:none;border:1px dashed var(--line);border-radius:6px;color:var(--muted);font:inherit;font-size:12px;padding:5px 12px;cursor:pointer}
+.oddsbtn:hover{color:var(--ink);border-color:var(--muted)}
+.odds{margin:10px auto 0;border-collapse:collapse;font-size:12px;min-width:240px}
+.odds th,.odds td{padding:3px 10px;border-bottom:1px solid var(--line);text-align:left}
+.odds td:last-child,.odds th:last-child{text-align:right;font-variant-numeric:tabular-nums}
+.odds tr.rare td{color:#b8860b;font-weight:700}
+/* 黄金のお祝い */
+#gold{position:fixed;inset:0;z-index:200;display:grid;place-items:center;padding:16px;overflow:hidden;background:radial-gradient(circle at 50% 45%,#fff6c9 0%,#ffd44a 32%,#d99a06 70%,#7a4f00 100%);cursor:pointer}
+.gshine{position:absolute;inset:-50%;background:repeating-conic-gradient(from 0deg,rgba(255,255,255,.38) 0deg 9deg,transparent 9deg 22deg);animation:gspin 14s linear infinite}
+.gsparks{position:absolute;inset:0;pointer-events:none}
+.gsparks i{position:absolute;width:var(--s);height:var(--s);left:var(--x);top:var(--y);background:#fff;clip-path:polygon(50% 0,61% 39%,100% 50%,61% 61%,50% 100%,39% 61%,0 50%,39% 39%);animation:gtwinkle var(--d) ease-in-out infinite;animation-delay:var(--t);opacity:0}
+.gcard{position:relative;text-align:center;padding:26px 26px 22px;max-width:420px;border-radius:18px;background:linear-gradient(160deg,#fffbe6,#ffe58a 45%,#f6c12c);border:3px solid #fff3b0;box-shadow:0 0 0 3px #b07a00,0 0 60px 18px rgba(255,236,140,.9);animation:gpop .6s cubic-bezier(.2,1.6,.4,1) both;cursor:default}
+.gcard h2{margin:4px 0 10px;font-size:30px;line-height:1.25;color:#6b4300;background:linear-gradient(100deg,#6b4300 0%,#9a6400 40%,#e8b730 48%,#9a6400 56%,#6b4300 100%);background-size:250% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:gglint 2.2s linear infinite;filter:drop-shadow(0 2px 0 rgba(255,255,255,.7))}
+.gsub{margin:0;font-size:12px;font-weight:700;color:#8a5b00;letter-spacing:.1em}
+.gmsg{margin:0 0 16px;color:#5a3a00;font-size:13px;line-height:1.7}
+.gcard .btn{background:#7a4f00;color:#fff8d6;border-color:#5a3a00;padding:8px 22px;font-weight:700}
+.tbox.goldbox{border-color:#e0a400;box-shadow:0 0 0 2px #ffd44a,0 0 40px 8px rgba(255,212,74,.8);animation:gglow 1.4s ease-in-out infinite alternate}
+@keyframes gspin{to{transform:rotate(360deg)}}
+@keyframes gtwinkle{0%,100%{opacity:0;transform:scale(.3)}50%{opacity:1;transform:scale(1)}}
+@keyframes gpop{from{transform:scale(.6);opacity:0}to{transform:scale(1);opacity:1}}
+@keyframes gglint{to{background-position:-200% 0}}
+@keyframes gglow{to{box-shadow:0 0 0 2px #fff3b0,0 0 70px 18px rgba(255,212,74,.95)}}
+@media (prefers-reduced-motion: reduce){.gshine,.gsparks i,.gcard,.gcard h2,.tbox.goldbox{animation:none!important}.gsparks i{opacity:.8}}
 @media (prefers-reduced-motion: reduce){*{transition:none!important}}
 </style>
 </head>
 <body>
 <header class="topbar">
-  <div class="brand-wrap"><a class="brand" href="#"><img class="logo" src="logo64.png" alt=""><b>マイドンラボ</b></a><button class="btn icon" id="themeBtn" type="button"></button><button class="btn bmbtn" id="bmBtn" type="button" aria-pressed="false" title="ブクマだけ表示">★<small id="bmCount">0</small></button></div>
+  <div class="brand-wrap"><a class="brand" href="#"><img class="logo" src="logo64.png" alt=""><b>マイドンラボ</b></a><button class="btn icon" id="themeBtn" type="button"></button><button class="btn bmbtn" id="bmBtn" type="button" aria-pressed="false" title="ブクマだけ表示">★<small id="bmCount">0</small></button><button class="btn icon sushibtn" id="sushiBtn" type="button" title="寿司ガチャ（利用規約）" aria-label="寿司ガチャ（利用規約をもう一度読む）"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><rect x="4.5" y="12.2" width="15" height="6.8" rx="3.4"/><path d="M2.8 12.3c.4-2.9 4.4-5 9.4-5s8.6 1.7 9 4.3c.1.6-.4 1.1-1 1.1H3.7c-.5 0-.9-.2-.9-.4z" fill="currentColor" fill-opacity=".22"/><path d="M8.2 8.4l1.3 3.6M12.4 7.5l.9 4.3M16.6 8.1l.6 3.7"/></svg></button></div>
   <div class="top-actions">
   <div class="sbox"><div class="search"><svg class="sicon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><input id="q" type="search" placeholder="マイドンを探す" aria-label="検索"><button class="advbtn" id="advBtn" type="button" aria-expanded="false" aria-controls="adv">詳細検索<span class="n" id="advN" hidden></span><span class="car">▾</span></button></div>
 <div class="adv" id="adv" hidden>
@@ -230,10 +258,12 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
   </div>
   </section>
 </main>
-<div id="terms" hidden><div class="tbox" role="dialog" aria-modal="true" aria-labelledby="termsTitle"><div class="tbody" id="termsBody"></div>
-  <div class="tfoot"><p>この規約のどこかに<b>お寿司のネタ</b>が1つまぎれています。見つけて入力すると、サイトを使えます。</p>
+<div id="terms" hidden><div class="tbox" role="dialog" aria-modal="true" aria-labelledby="termsTitle"><button class="x" id="termsX" type="button" aria-label="閉じる" hidden>×</button><div class="tbody" id="termsBody"></div>
+  <div class="tfoot"><p>この規約のどこかに<b>お寿司のネタ</b>が1つまぎれています。<span id="termsHint">見つけて入力すると、サイトを使えます。</span></p>
   <form id="termsForm" autocomplete="off"><input id="termsIn" type="text" placeholder="お寿司のネタ" aria-label="規約の中のお寿司のネタ"><button class="btn primary" type="submit">同意して入る</button></form>
   <p class="terr" id="termsErr" role="alert"></p></div></div></div>
+<div id="gold" hidden role="dialog" aria-modal="true" aria-labelledby="goldTitle"><div class="gshine"></div><div class="gsparks" id="gsparks"></div>
+  <div class="gcard"><p class="gsub">寿司ガチャ 0.5%</p><h2 id="goldTitle">まぐろたたき納豆</h2><p class="gmsg">おめでとうございます！ 200回に1回のレアネタを引き当てて、ちゃんと見つけました！</p><button class="btn" id="goldOk" type="button">やったー！</button></div></div>
 <div id="toast" role="status" aria-live="polite"></div>
 <div id="modal" hidden><div class="mbox" role="dialog" aria-modal="true"><button class="x" id="mclose" aria-label="閉じる">×</button><div id="mbody"></div></div></div>
 
@@ -672,7 +702,7 @@ const TERMS = [
   ['p', '<a href="https://discord.gg/Qa2SDrAntx" target="_blank" rel="noopener">https://discord.gg/Qa2SDrAntx</a>'],
 ];
 const kana = t => String(t).normalize('NFKC').trim().replace(/[\s　]/g, '').replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60)).replace(/ー/g, '-');
-function showTerms(){
+function showTerms(gacha){
   // 規約にもともと入っている言葉（「ように」の「うに」など）は、まぎらわしいので使わない
   const base = kana(TERMS.map(t => t[1].replace(/<[^>]+>/g, '')).join(''));
   const pool = SUSHI.map(n => [].concat(n)).filter(n => !n.some(w => base.includes(kana(w))));
@@ -688,18 +718,51 @@ function showTerms(){
     html += k === 'li' ? `<li>${v}</li>` : k === 'sub' ? `<p class="tsub">${v}</p>` : `<${k}>${v}</${k}>`;
   });
   if (inList) html += '</ul>';
+  // 一番下に確率表のボタン
+  const each = (1 - RARE.rate) / pool.length * 100, pct = v => (Math.round(v * 1000) / 1000) + '%';
+  html += `<div class="godds"><button type="button" class="oddsbtn" id="oddsBtn" aria-expanded="false">寿司ガチャの確率表</button>
+    <table class="odds" id="odds" hidden><thead><tr><th>ネタ</th><th>確率</th></tr></thead><tbody>
+    <tr class="rare"><td>★ ${RARE.neta[0]}</td><td>${pct(RARE.rate * 100)}</td></tr>
+    ${pool.map(n => `<tr><td>${n[0]}</td><td>${pct(each)}</td></tr>`).join('')}</tbody></table></div>`;
   $('#termsBody').innerHTML = html;
-  $('#terms').hidden = false; document.body.style.overflow = 'hidden';
+  $('#oddsBtn').onclick = () => { const t = $('#odds'), b = $('#oddsBtn'); t.hidden = !t.hidden; b.setAttribute('aria-expanded', !t.hidden); };
+  $('.tbox').classList.remove('goldbox');
+  $('#termsIn').value = ''; $('#termsErr').textContent = '';
+  // ガチャとして開いた時は、×・Esc・外側を押すとやめられる（最初の同意の時はやめられない）
+  S.termsGacha = !!gacha;
+  $('#termsX').hidden = !gacha;
+  $('#termsHint').textContent = gacha ? '見つけて入力してみて下さい（×でやめられます）。' : '見つけて入力すると、サイトを使えます。';
+  $('#termsForm button').textContent = gacha ? '答える' : '同意して入る';
+  $('#terms').hidden = false; document.body.style.overflow = 'hidden'; $('.tbody').scrollTop = 0;
   $('#termsForm').onsubmit = e => {
     e.preventDefault();
     if (pick.some(w => kana(w) === kana($('#termsIn').value))) {
       try { localStorage.setItem(TERMS_KEY, TERMS_VER); } catch {}
-      $('#terms').hidden = true; document.body.style.overflow = '';
+      if (pick === RARE.neta) { $('.tbox').classList.add('goldbox'); setTimeout(() => { closeTerms(); celebrate(); }, 700); }
+      else { closeTerms(); if (gacha) toast(`正解！「${neta}」でした`); }
     } else { $('#termsErr').textContent = 'ちがうみたいです。規約をもう一度読んで、まぎれているネタを探してみて下さい。'; $('#termsIn').select(); }
   };
   setTimeout(() => $('#termsIn').focus({ preventScroll: true }), 50);
 }
-try { if (localStorage.getItem(TERMS_KEY) !== TERMS_VER) showTerms(); } catch { showTerms(); }
+function closeTerms(){ $('#terms').hidden = true; document.body.style.overflow = ''; }
+function celebrate(){
+  const g = $('#gold');
+  $('#gsparks').innerHTML = Array.from({ length: 36 }, () => `<i style="--x:${Math.random() * 100}%;--y:${Math.random() * 100}%;--s:${8 + Math.random() * 22}px;--d:${1.2 + Math.random() * 1.8}s;--t:${-Math.random() * 3}s"></i>`).join('');
+  g.hidden = false; document.body.style.overflow = 'hidden';
+  setTimeout(() => $('#goldOk').focus(), 50);
+}
+function closeGold(){ $('#gold').hidden = true; document.body.style.overflow = ''; }
+$('#goldOk').addEventListener('click', closeGold);
+$('#gold').addEventListener('click', e => { if (!e.target.closest('.gcard')) closeGold(); });
+$('#sushiBtn').addEventListener('click', () => showTerms(true));
+$('#termsX').addEventListener('click', closeTerms);
+$('#terms').addEventListener('click', e => { if (S.termsGacha && e.target.id === 'terms') closeTerms(); });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (!$('#gold').hidden) closeGold();
+  else if (!$('#terms').hidden && S.termsGacha) closeTerms();
+});
+try { if (localStorage.getItem(TERMS_KEY) !== TERMS_VER) showTerms(false); } catch { showTerms(false); }
 
 // ----- 起動 -----
 (async () => {
