@@ -651,7 +651,7 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal
 
 // ----- 利用規約（最初に表示。中にまぎれた寿司ネタを入力したら入れる） -----
 const TERMS_KEY = 'mydon-terms', TERMS_VER = '2026-10-16';   // 規約を書き換えたら日付を変えると、もう一度表示されます
-const SUSHI = ['まぐろ', 'サーモン', 'えんがわ', 'いくら', 'うに', 'はまち', 'えび', 'たまご', 'いか', 'たこ', 'あなご', 'ほたて', 'ねぎとろ', 'しめさば', 'あじ', 'ぶり', 'かんぱち', 'とびっこ', 'つぶがい', 'かずのこ'];
+const SUSHI = ['まぐろ', 'サーモン', 'えんがわ', 'いくら', 'うに', 'はまち', 'えび', 'たまご', 'いか', 'たこ', 'あなご', 'ほたて', 'ねぎとろ', 'しめさば', 'あじ', 'ぶり', 'かんぱち', 'とびっこ', 'つぶがい', 'かずのこ', ['まぐろたたき納豆', 'まぐろたたきなっとう']];   // ['表示', '読み方'] のように書くと、読み方で入力してもOK
 const DC = 'https://discordapp.com/channels/1558703876973011006/';
 const TERMS = [
   ['h2', '1. マイドンラボ に関して'],
@@ -674,8 +674,8 @@ const kana = t => String(t).normalize('NFKC').trim().replace(/[\s　]/g, '').rep
 function showTerms(){
   // 規約にもともと入っている言葉（「ように」の「うに」など）は、まぎらわしいので使わない
   const base = kana(TERMS.map(t => t[1].replace(/<[^>]+>/g, '')).join(''));
-  const pool = SUSHI.filter(n => !base.includes(kana(n)));
-  const neta = pool[Math.floor(Math.random() * pool.length)];
+  const pool = SUSHI.map(n => [].concat(n)).filter(n => !n.some(w => base.includes(kana(w))));
+  const pick = pool[Math.floor(Math.random() * pool.length)], neta = pick[0];
   const spots = TERMS.map((t, i) => t[0] === 'li' ? i : -1).filter(i => i >= 0);   // 小さい文字の行（sub）には入れない
   const at = spots[Math.floor(Math.random() * spots.length)];
   let html = '<h1 id="termsTitle">マイドンラボへようこそ</h1><p class="tsub">＜このサイトでのルール＞</p>', inList = false;
@@ -691,7 +691,7 @@ function showTerms(){
   $('#terms').hidden = false; document.body.style.overflow = 'hidden';
   $('#termsForm').onsubmit = e => {
     e.preventDefault();
-    if (kana($('#termsIn').value) === kana(neta)) {
+    if (pick.some(w => kana(w) === kana($('#termsIn').value))) {
       try { localStorage.setItem(TERMS_KEY, TERMS_VER); } catch {}
       $('#terms').hidden = true; document.body.style.overflow = '';
     } else { $('#termsErr').textContent = 'ちがうみたいです。規約をもう一度読んで、まぎれているネタを探してみて下さい。'; $('#termsIn').select(); }
