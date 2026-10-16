@@ -15,14 +15,14 @@
   --bg:#ffffff; --head:#7ccdec; --head-ink:#0b3446; --head-line:#6cc0e2; --bagbg:#e3f3fa; --soft:#ffffff; --panel:#ffffff; --ink:#16303d; --muted:#5f7f8e; --line:#c9e3ee;
   --accent:#1fa3d6; --accent-ink:#ffffff; --strong:#1fa3d6; --on-bg:#5f7f8e; --on-bg-tab:#5f7f8e; --gold:#e0a400;
   --check-a:rgba(31,163,214,.08); --tab-off:#f1f8fb; --badge-bg:rgba(10,40,55,.62); --scrim:rgba(8,30,42,.55);
-  --f-body:"Segoe UI","Yu Gothic UI","Meiryo","Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans CJK JP",sans-serif;
+  --tile:#f3f9fc; --fold:#c6e6f3; --f-body:"Segoe UI","Yu Gothic UI","Meiryo","Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans CJK JP",sans-serif;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
   --bg:#16262f; --head:#0f4a62; --head-ink:#e3f2f8; --head-line:#13586f; --bagbg:#0f1c23; --soft:#16262f; --panel:#16262f; --ink:#e3f2f8; --muted:#8eacb9; --line:#25404d; --accent:#4cc3ee; --accent-ink:#06202b; --strong:#4cc3ee; --on-bg:#8eacb9; --on-bg-tab:#8eacb9;
-  --gold:#f0b429; --check-a:rgba(76,195,238,.07); --tab-off:#122129; color-scheme:dark}}
+  --gold:#f0b429; --check-a:rgba(76,195,238,.07); --tab-off:#122129; --tile:#1c313b; --fold:#25404d; color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#16262f; --head:#0f4a62; --head-ink:#e3f2f8; --head-line:#13586f; --bagbg:#0f1c23; --soft:#16262f; --panel:#16262f; --ink:#e3f2f8; --muted:#8eacb9; --line:#25404d; --accent:#4cc3ee; --accent-ink:#06202b; --strong:#4cc3ee; --on-bg:#8eacb9; --on-bg-tab:#8eacb9;
-  --gold:#f0b429; --check-a:rgba(76,195,238,.07); --tab-off:#122129; color-scheme:dark}
+  --gold:#f0b429; --check-a:rgba(76,195,238,.07); --tab-off:#122129; --tile:#1c313b; --fold:#25404d; color-scheme:dark}
 *{box-sizing:border-box}
 [hidden]{display:none!important}
 body{margin:0;background:var(--bg);color:var(--ink);font:13px/1.5 var(--f-body)}
@@ -45,23 +45,24 @@ a{color:inherit}
 .sub-btn.more{color:var(--muted);border-style:dashed}
 .sec{margin:16px 0 8px;font-size:13px;display:flex;align-items:baseline;gap:8px}
 .sec:first-child{margin-top:0}
-.catsec + .catsec{margin-top:22px;padding-top:16px;border-top:1px solid var(--line)}
-.cathead{margin:0 0 4px;font-size:15px;display:flex;align-items:baseline;gap:8px}
-.cathead small{color:var(--muted);font-weight:400;font-size:12px}
-.cathead button{margin-left:auto;background:none;border:0;color:var(--muted);font:inherit;font-size:11px;cursor:pointer}
+.catsec + .catsec{margin-top:28px}
+.cathead{margin:0 0 2px;display:flex;align-items:baseline;gap:8px}
+.cathead button{all:unset;cursor:pointer;font-size:15px;font-weight:700;line-height:1.3;color:var(--ink)}
 .cathead button:hover{color:var(--strong)}
+.cathead button:focus-visible{outline:2px solid var(--strong);outline-offset:2px}
+.cathead small{color:var(--muted);font-weight:400;font-size:12px}
 .catsec .grid{margin-top:8px}
 /* png（1枚絵）は小さく見えるので 1.3 倍で表示 */
 img.png{transform:scale(1.3);transform-origin:center}
 .thumbs button,.gal{overflow:hidden}
-.ftile{display:block;overflow:hidden;border-radius:6px;background:var(--panel);min-height:0}
+.ftile{display:block;overflow:hidden;border-radius:8px;background:var(--panel);min-height:0}
 .ftile img{width:100%;height:100%;object-fit:contain;display:block}
 .sibimg{display:block;width:48px;height:48px;margin:0 auto 2px;overflow:hidden;border-radius:5px}
 .sibimg img{width:100%;height:100%;object-fit:contain;display:block;margin:0}
 .onbg{color:var(--on-bg)}
-.fthumb{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:6px;padding:10px;background:var(--line)}
+.fthumb{display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;gap:5px;padding:9px;background:var(--line)}
 .fthumb .ftile{width:100%;height:100%;min-height:0}
-.fthumb .fmore{position:absolute;right:8px;bottom:8px;width:auto;height:auto;background:var(--badge-bg);color:#fff;font-size:11px;padding:1px 7px;border-radius:999px}
+.fthumb .fmore{position:absolute;right:9px;bottom:9px;width:calc(50% - 11.5px);height:calc(50% - 11.5px);display:grid;place-items:center;background:color-mix(in srgb,var(--panel) 82%,transparent);color:var(--ink);font-weight:700;font-size:15px;border-radius:8px}
 .mbox.wide{max-width:760px}
 .fpop h2{margin:4px 0 2px;font-size:17px;display:flex;align-items:baseline;gap:8px}
 .fpop h2 small{color:var(--muted);font-weight:400;font-size:12px}
@@ -125,24 +126,29 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
 .bmbtn[aria-pressed="true"]{color:var(--gold);border-color:var(--gold)}
 @media (max-width:420px){.arow{grid-template-columns:1fr;gap:4px}}
 .count{color:var(--muted);font-size:12px;font-variant-numeric:tabular-nums}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
-.card{position:relative;background:var(--soft);border:1px solid var(--line);border-radius:8px;padding:6px;cursor:pointer}
-.card:hover{border-color:var(--strong)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:18px 12px}
+.card{position:relative;cursor:pointer;min-width:0}
+.card:hover .thumb{box-shadow:0 0 0 2px var(--strong)}
+.card:hover h3{color:var(--strong)}
 .card:focus-visible,.tab:focus-visible,button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--strong);outline-offset:2px}
-.thumb{aspect-ratio:1;max-width:100%;position:relative;border-radius:6px;overflow:hidden;background:repeating-conic-gradient(var(--check-a) 0% 25%,transparent 0% 50%) 50%/16px 16px}
+.thumb{aspect-ratio:1;max-width:100%;position:relative;border-radius:14px;overflow:hidden;background:var(--panel)}
 .thumb img{width:100%;height:100%;object-fit:contain;display:block}
-.badge{position:absolute;left:6px;bottom:6px;background:var(--badge-bg);color:#fff;font-size:11px;padding:1px 7px;border-radius:999px}
-.meta{padding:6px 2px 2px;display:grid;gap:3px}
-.meta h3{margin:0;font-size:13px;font-weight:600;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.thumb.fthumb{background:var(--fold)}
+.mbox .thumb{background:var(--bagbg)}
+.badge{position:absolute;left:8px;bottom:6px;color:var(--muted);font-size:11px}
+.meta{padding:7px 2px 0;display:grid;gap:1px}
+.meta h3{margin:0;font-size:13px;font-weight:700;line-height:1.4;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sub{display:flex;gap:6px;align-items:center;font-size:11px;color:var(--muted);flex-wrap:wrap}
-.chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:0 8px;color:var(--ink)}
-.bm{position:absolute;top:10px;right:10px;width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:var(--soft);color:var(--muted);font-size:15px;cursor:pointer;line-height:1}
-.bm[aria-pressed="true"]{color:var(--gold);border-color:var(--gold)}
+.chip{color:var(--ink)}
+.bm{position:absolute;top:4px;right:4px;width:30px;height:30px;border:0;background:none;color:var(--muted);font-size:17px;cursor:pointer;line-height:1;opacity:0}
+.card:hover .bm,.bm:focus-visible,.bm[aria-pressed="true"]{opacity:1}
+@media (hover:none){.bm{opacity:.55}}
+.bm[aria-pressed="true"]{color:var(--gold);opacity:1}
 .empty{grid-column:1/-1;text-align:center;color:var(--muted);padding:48px 0}
 #modal{position:fixed;inset:0;background:var(--scrim);display:flex;align-items:center;justify-content:center;padding:16px;z-index:50}
 .mbox{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:10px;max-width:560px;width:100%;max-height:92%;overflow:auto;padding:16px 18px;position:relative}
 .x{position:absolute;top:4px;right:6px;border:0;background:none;font-size:24px;color:var(--muted);cursor:pointer;line-height:1;padding:4px 8px}
-.gal{position:relative;border-radius:8px;aspect-ratio:1;max-width:100%;overflow:hidden;margin-top:24px;background:repeating-conic-gradient(var(--check-a) 0% 25%,transparent 0% 50%) 50%/16px 16px}
+.gal{position:relative;border-radius:16px;aspect-ratio:1;max-width:100%;overflow:hidden;margin-top:24px;background:var(--bagbg)}
 .gal img{width:100%;height:100%;object-fit:contain;display:block}
 .nav{position:absolute;top:50%;transform:translateY(-50%);width:34px;height:34px;border-radius:6px;border:0;background:var(--badge-bg);color:#fff;font-size:16px;cursor:pointer}
 .nav.l{left:8px}.nav.r{right:8px}
@@ -151,16 +157,16 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
 .thumbs button[aria-current="true"]{border-color:var(--strong)}
 .thumbs img{width:48px;height:48px;object-fit:contain;display:block;border-radius:5px}
 .detail h2{margin:10px 0 4px;font-size:16px;text-wrap:balance}
-.dmeta{display:flex;gap:8px;align-items:center;flex-wrap:wrap;font-size:11px;color:var(--muted);margin-bottom:8px}
+.dmeta{display:flex;gap:4px 12px;align-items:center;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-bottom:12px}
 .desc{white-space:pre-wrap;margin:0 0 12px;max-width:65ch}
 .dl{display:grid;gap:6px;margin-bottom:10px}
 .frow{display:flex;gap:6px;align-items:stretch;min-width:0}
-.file{flex:1;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;background:var(--soft);border:1px solid var(--line);border-radius:6px;text-decoration:none;min-width:0}
+.file{font-weight:600;flex:1;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;background:var(--soft);border:1px solid var(--line);border-radius:6px;text-decoration:none;min-width:0}
 .file:hover{border-color:var(--muted)}
 .file span{min-width:0;word-break:break-all}
-.file small{color:var(--muted);flex:none;font-variant-numeric:tabular-nums}
-.fsim{font-style:normal;font-size:.8em;margin-left:8px;padding:1px 7px;border-radius:999px;background:var(--accent);color:#fff;white-space:nowrap;vertical-align:1px}
-.copy{flex:none;font:inherit;font-size:12px;color:var(--ink);background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:0;width:4.6em;cursor:pointer;white-space:nowrap;text-align:center}
+.file small{font-weight:400;color:var(--muted);flex:none;font-variant-numeric:tabular-nums}
+.fsim{font-style:normal;font-weight:700;margin-left:8px;color:var(--strong);white-space:nowrap}
+.copy{flex:none;font:inherit;font-size:12px;color:var(--ink);background:var(--soft);border:1px solid var(--line);border-radius:6px;padding:0;width:6.2em;cursor:pointer;white-space:nowrap;text-align:center}
 .copy:hover{border-color:var(--muted)}
 .copy.done{color:var(--strong);border-color:var(--strong)}
 .btn[data-dbm][aria-pressed="true"]{background:var(--soft);color:var(--gold);border-color:var(--gold)}
@@ -182,7 +188,7 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
 <header class="topbar">
   <div class="brand-wrap"><a class="brand" href="#"><img class="logo" src="logo64.png" alt=""><b>マイドンラボ</b></a><button class="btn icon" id="themeBtn" type="button"></button><button class="btn bmbtn" id="bmBtn" type="button" aria-pressed="false" title="ブクマだけ表示">★<small id="bmCount">0</small></button></div>
   <div class="top-actions">
-  <div class="sbox"><div class="search"><svg class="sicon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><input id="q" type="search" placeholder="タイトル・説明で検索" aria-label="検索"><button class="advbtn" id="advBtn" type="button" aria-expanded="false" aria-controls="adv">詳細検索<span class="n" id="advN" hidden></span><span class="car">▾</span></button></div>
+  <div class="sbox"><div class="search"><svg class="sicon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" stroke-width="2"/><path d="M15.5 15.5 21 21" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><input id="q" type="search" placeholder="マイドンを探す" aria-label="検索"><button class="advbtn" id="advBtn" type="button" aria-expanded="false" aria-controls="adv">詳細検索<span class="n" id="advN" hidden></span><span class="car">▾</span></button></div>
 <div class="adv" id="adv" hidden>
     <div class="arow"><span class="alabel">検索</span><div class="seg" id="modeSeg"><button type="button" data-mode="all">全体検索</button><button type="button" data-mode="kw">キーワード検索</button><button type="button" data-mode="tag">タグ指定</button></div></div>
     <div class="arow" id="tagRow" hidden><span class="alabel">タグ</span><div class="chips" id="tagChips"></div></div>
@@ -426,7 +432,7 @@ function renderAdv(){
   $('#sim').innerHTML = '<option value="">すべて</option>' + simKeys.map(k => `<option value="${esc(simName[k])}">${esc(simName[k])}（${simCount[k] || 0}）</option>`).join('');
   $('#sim').value = S.sim; $('#dFrom').value = S.dFrom; $('#dTo').value = S.dTo;
   $('#fps').value = S.fps; $('#sort').value = S.sort;
-  $('#q').placeholder = S.mode === 'kw' ? '名前・説明で検索' : S.mode === 'tag' ? 'タグ名で検索' : '全体から検索';
+  $('#q').placeholder = S.mode === 'kw' ? '名前・説明で検索' : S.mode === 'tag' ? 'タグ名で検索' : 'マイドンを探す';
   const n = (S.mode !== 'all') + (S.sort !== 'new') + !!S.fps + !!S.color + !!S.sim + !!S.dFrom + !!S.dTo + (S.mode === 'tag' ? S.tags.size : 0);
   $('#advN').hidden = !n; $('#advN').textContent = n;
   $('#bmBtn').setAttribute('aria-pressed', S.bmOnly); $('#bmCount').textContent = S.items.filter(x => S.bms.has(x.id)).length;
@@ -437,7 +443,7 @@ function card(x, showGroup){
       <div class="thumb">${x.images[0] ? `<img loading="lazy"${pngc(x.images[0])} src="${esc(x.images[0])}" alt="">` : ''}
         ${x.images.length > 1 ? `<span class="badge">${x.images.length}枚</span>` : ''}</div>
       <div class="meta"><h3>${esc(x.name)}</h3>
-        <div class="sub">${showGroup ? `<span class="chip">${esc(x.rtitle)}</span>` : ''}${x.fps ? `<span>${esc(x.fps)}fps</span>` : ''}<span>${fmtDate(x.date)}</span></div></div>
+        <div class="sub">${showGroup && x.rtitle !== x.name ? `<span>${esc(x.rtitle)}</span>` : ''}</div></div>
       <button class="bm" data-bm="${esc(x.id)}" aria-pressed="${S.bms.has(x.id)}" aria-label="ブクマ">★</button>
     </div>`;
 }
@@ -447,7 +453,7 @@ function folder(p, items){
   return `<div class="card folder" role="button" tabindex="0" data-folder="${esc(p.rid)}">
       <div class="thumb fthumb">${pics}${items.length > 4 ? `<span class="fmore">+${items.length - 4}</span>` : ''}</div>
       <div class="meta"><h3>${esc(p.rtitle)}</h3>
-        <div class="sub"><span class="chip">📁 ${items.length}体</span><span>${fmtDate(p.date)}</span></div></div>
+        <div class="sub"><span>${items.length}体</span></div></div>
     </div>`;
 }
 function openFolder(rid){
@@ -455,7 +461,7 @@ function openFolder(rid){
   const items = sortItems(p.items.filter(passes));
   $('#mbody').innerHTML = `<div class="fpop">
     <h2>${esc(p.rtitle)}<small>${items.length}体</small></h2>
-    <p class="fpath">${esc(p.cat || 'その他')} › ${esc(p.rtitle)}</p>
+    <p class="fpath">${esc(p.cat || 'その他')}</p>
     <div class="grid">${items.map(x => card(x, false)).join('')}</div>
   </div>`;
   $('#modal').hidden = false; $('.mbox').scrollTop = 0; $('.mbox').classList.add('wide');
@@ -472,7 +478,7 @@ function renderGrid(){
     html = items.length ? `<div class="grid">${items.map(x => card(x, true)).join('')}</div>`
       : empty(S.bmOnly && !S.items.some(x => S.bms.has(x.id)) ? 'まだブクマがありません。気になるマイドンの ★ を押すとここに集まります。' : '該当するマイドンがありません');
   } else if (S.cat === 'all') {
-    crumb = 'すべてのマイドン';
+    crumb = '';
     // 大分類ごとに見出しを付け、その中を小分類ごとにまとめる（フォルダのように）
     const cats = [...S.cats, ...(S.posts.some(p => !p.cat) ? ['none'] : [])];
     html = cats.map(c => {
@@ -484,7 +490,7 @@ function renderGrid(){
         return items.length === 1 ? card(items[0], true) : folder(p, items);
       }).join('');
       count += n;
-      return n ? `<section class="catsec"><h3 class="cathead">${esc(c === 'none' ? 'その他' : c)}<small>${n}体</small><button type="button" data-gocat="${esc(c)}">このタブを開く ›</button></h3><div class="grid">${tiles}</div></section>` : '';
+      return n ? `<section class="catsec"><h3 class="cathead"><button type="button" data-gocat="${esc(c)}">${esc(c === 'none' ? 'その他' : c)}</button><small>${n}体</small></h3><div class="grid">${tiles}</div></section>` : '';
     }).join('') || empty(S.items.length ? '該当するマイドンがありません' : 'まだ投稿がありません');
   } else {
     const posts = postsInCat();
@@ -502,7 +508,7 @@ function renderGrid(){
       }).join('') || empty('該当するマイドンがありません');
     }
   }
-  $('#crumb').textContent = crumb;
+  $('#crumb').textContent = crumb; document.querySelector('.bag-head').hidden = !crumb;
   $('#count').textContent = count + '体';
   list.innerHTML = html;
 }
@@ -515,7 +521,7 @@ function toggleBm(id){
   const b = document.querySelector('#mbody [data-dbm]');
   if (b && b.dataset.dbm === id) setDbm(b, id);
 }
-function setDbm(b, id){ const on = S.bms.has(id); b.setAttribute('aria-pressed', on); b.textContent = on ? '★ ブクマ済み' : '☆ ブクマする'; }
+function setDbm(b, id){ const on = S.bms.has(id); b.setAttribute('aria-pressed', on); b.textContent = on ? 'ブクマ済み' : 'ブクマする'; }
 
 function openDetail(id, fromFolder){
   const x = S.items.find(y => y.id === id); if (!x) return;
@@ -530,11 +536,11 @@ function openDetail(id, fromFolder){
     ${x.images.length > 1 ? `<div class="thumbs">${x.images.map((u, k) => `<button data-k="${k}" aria-current="${k === 0}"><img${pngc(u)} src="${esc(u)}" alt=""></button>`).join('')}</div>` : ''}
     </div><div class="dinfo">
     <h2>${esc(x.name)}</h2>
-    <div class="dmeta">${x.cat ? `<span class="chip">${esc(x.cat)}</span>` : ''}<span class="chip">${esc(x.rtitle)}</span>${x.tags.map(t => `<span class="chip">#${esc(t)}</span>`).join('')}${x.fps ? `<span>${esc(x.fps)}fps</span>` : ''}${x.color ? `<span>カラー: ${esc(x.color)}</span>` : ''}<span>${esc(x.sim)}</span><span>${fmtDate(x.date)}</span></div>
+    <div class="dmeta">${x.cat ? `<span>${esc(x.cat)}</span>` : ''}${x.rtitle !== x.name ? `<span>${esc(x.rtitle)}</span>` : ''}${x.tags.map(t => `<span>#${esc(t)}</span>`).join('')}${x.fps ? `<span>${esc(x.fps)}fps</span>` : ''}${x.color ? `<span>カラー: ${esc(x.color)}</span>` : ''}<span>${esc(x.sim)}</span><span>${fmtDate(x.date)}</span></div>
     ${x.desc ? `<p class="desc">${esc(x.desc)}</p>` : ''}
-    <div class="dl">${x.files.map(f => `<div class="frow"><a class="file" href="${esc(f.url)}" target="_blank" rel="noopener"><span>⬇ ${esc(f.name.replace(/^m\d+(?=[_.])/i, x.name))}${x.sims.length > 1 ? `<em class="fsim">${esc(f.sim)}版</em>` : ''}</span><small>${fmtSize(f.size)}</small></a><button class="copy" data-copy="${esc(f.url)}" aria-label="${esc(f.name)} のURLをコピー">コピー</button></div>`).join('') || '<p class="count">ダウンロードできるファイルはありません</p>'}</div>
+    <div class="dl">${x.files.map(f => `<div class="frow"><a class="file" href="${esc(f.url)}" target="_blank" rel="noopener"><span>${esc(f.name.replace(/^m\d+(?=[_.])/i, x.name))}${x.sims.length > 1 ? `<em class="fsim">${esc(f.sim)}版</em>` : ''}</span><small>${fmtSize(f.size)}</small></a><button class="copy" data-copy="${esc(f.url)}" aria-label="${esc(f.name)} のURLをコピー">URLコピー</button></div>`).join('') || '<p class="count">ダウンロードできるファイルはありません</p>'}</div>
     <button class="btn primary wide" data-dbm="${esc(x.id)}"></button>
-    ${sibs.length > 1 ? `<p class="slabel">「${esc(x.rtitle)}」の他のマイドン</p><div class="sibs">${sibs.map(y => `<button type="button" data-sib="${esc(y.id)}" aria-current="${y.id === x.id}">${y.images[0] ? `<span class="sibimg"><img${pngc(y.images[0])} src="${esc(y.images[0])}" alt=""></span>` : ''}<span>${esc(y.name)}</span></button>`).join('')}</div>` : ''}
+    ${sibs.length > 1 ? `<p class="slabel">${esc(x.rtitle)}のほかのマイドン</p><div class="sibs">${sibs.map(y => `<button type="button" data-sib="${esc(y.id)}" aria-current="${y.id === x.id}">${y.images[0] ? `<span class="sibimg"><img${pngc(y.images[0])} src="${esc(y.images[0])}" alt=""></span>` : ''}<span>${esc(y.name)}</span></button>`).join('')}</div>` : ''}
     <a class="src" href="${esc(x.page)}" target="_blank" rel="noopener">GitHub のリリースを開く</a>
   </div></div>`;
   setDbm($('#mbody [data-dbm]'), x.id);
@@ -614,8 +620,8 @@ $('#mbody').addEventListener('click', async e => {
   }
   const b = e.target.closest('[data-copy]'); if (!b) return;
   if (await copyText(b.dataset.copy)) {
-    b.textContent = '✓ 完了'; b.classList.add('done'); toast('URLをコピーしました');
-    setTimeout(() => { b.textContent = 'コピー'; b.classList.remove('done'); }, 1600);
+    b.textContent = 'コピー済み'; b.classList.add('done'); toast('URLをコピーしました');
+    setTimeout(() => { b.textContent = 'URLコピー'; b.classList.remove('done'); }, 1600);
   } else toast('コピーできませんでした。リンクを長押ししてコピーして下さい');
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
