@@ -15,6 +15,8 @@ Add-Type -AssemblyName System.Security
 
 $ConfDir   = Join-Path $env:APPDATA 'MydonLabo'
 $TokenFile = Join-Path $ConfDir 'token.txt'
+$HookFile  = Join-Path $ConfDir 'discord.txt'
+$SiteUrl   = "https://$Owner.github.io/$Repo/"
 $ImageExt  = @('.png', '.gif', '.jpg', '.jpeg', '.webp')
 
 # ---------- トークン（このPCのこのユーザーだけが読める形で保存） ----------
@@ -134,6 +136,78 @@ function Send-Asset($releaseId, [string]$path, [string]$name) {
         }
     } finally { $fs.Dispose() }
 }
+# ---------- Discord への通知（Webhook） ----------
+function Get-Hook {
+    if (-not (Test-Path $HookFile)) { return $null }
+    try {
+        $enc = ([IO.File]::ReadAllText($HookFile)).Trim(); if (-not $enc) { return $null }
+        $bytes = [Security.Cryptography.ProtectedData]::Unprotect([Convert]::FromBase64String($enc.Substring(6)), $null, 'CurrentUser')
+        return [Text.Encoding]::UTF8.GetString($bytes)
+    } catch { return $null }
+}
+function Save-Hook([string]$u) {
+    New-Item -ItemType Directory -Force -Path $ConfDir | Out-Null
+    if (-not $u) { Remove-Item $HookFile -Force -ErrorAction SilentlyContinue; return }
+    $bytes = [Security.Cryptography.ProtectedData]::Protect([Text.Encoding]::UTF8.GetBytes($u), $null, 'CurrentUser')
+    [IO.File]::WriteAllText($HookFile, 'dpapi:' + [Convert]::ToBase64String($bytes))
+}
+# 1通送る。$files は画像のパス（最大10枚）。送れなければ例外
+function Send-DiscordMessage([string]$hook, $payload, [string[]]$files) {
+    for ($try = 0; $try -lt 3; $try++) {
+        $mp = New-Object System.Net.Http.MultipartFormDataContent
+        $json = $payload | ConvertTo-Json -Depth 8 -Compress
+        $mp.Add((New-Object System.Net.Http.StringContent ($json, [Text.Encoding]::UTF8, 'application/json')), 'payload_json')
+        $streams = @()
+        for ($i = 0; $i -lt $files.Count; $i++) {
+            $fs = [IO.File]::OpenRead($files[$i]); $streams += $fs
+            $sc = New-Object System.Net.Http.StreamContent ($fs)
+            $sc.Headers.ContentType = [System.Net.Http.Headers.MediaTypeHeaderValue]::Parse((Get-Mime $files[$i]))
+            $mp.Add($sc, "files[$i]", "img$i" + [IO.Path]::GetExtension($files[$i]).ToLower())
+        }
+        try {
+            $res = Wait-Task ($script:http.PostAsync($hook + '?wait=true', $mp)) 120
+            $text = Wait-Task ($res.Content.ReadAsStringAsync())
+        } finally { foreach ($fs in $streams) { $fs.Dispose() }; $mp.Dispose() }
+        if ($res.IsSuccessStatusCode) { return }
+        if ([int]$res.StatusCode -eq 429) {
+            $wait = 2; try { $wait = [double](($text | ConvertFrom-Json).retry_after) + 0.5 } catch { }
+            $sw = [Diagnostics.Stopwatch]::StartNew(); while ($sw.Elapsed.TotalSeconds -lt $wait) { [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 50 }
+            continue
+        }
+        throw "Discord に送れませんでした（$([int]$res.StatusCode)）：$text"
+    }
+    throw 'Discord が混んでいて送れませんでした。'
+}
+# 投稿したマイドンを知らせる。$entries は {Name, Image(パス or 空), Note}
+function Send-DiscordNotify([string]$title, [string]$cat, [bool]$isNew, $entries) {
+    $hook = Get-Hook
+    if (-not $hook -or -not @($entries).Count) { return $false }
+    $entries = @($entries)
+    $where = if ($cat) { "**$title**（$cat）" } else { "**$title**" }
+    $head = if ($isNew) { "新しい小分類 $where ができました！ マイドン $($entries.Count) 体" } else { "$where にマイドンが追加されました！ $($entries.Count) 体" }
+    for ($p = 0; $p -lt $entries.Count; $p += 10) {
+        $chunk = @($entries[$p..([Math]::Min($entries.Count, $p + 10) - 1)])
+        $files = @(); $embeds = @(); $size = 0
+        foreach ($e in $chunk) {
+            $emb = [ordered]@{ title = [string]$e.Name; color = 2073558 }   # url を同じにすると Discord が画像を1つにまとめてしまうので付けない
+            if ($e.Note) { $emb.description = [string]$e.Note }
+            if ($e.Image -and (Test-Path -LiteralPath $e.Image)) {
+                $len = (Get-Item -LiteralPath $e.Image).Length
+                if ($size + $len -lt 9MB) {
+                    $size += $len
+                    $emb.image = @{ url = "attachment://img$($files.Count)" + [IO.Path]::GetExtension($e.Image).ToLower() }
+                    $files += $e.Image
+                }
+            }
+            $embeds += $emb
+        }
+        $payload = [ordered]@{ username = 'マイドンラボ'; embeds = $embeds; allowed_mentions = @{ parse = @() } }
+        if ($p -eq 0) { $payload.content = "$head`n$SiteUrl" }
+        Send-DiscordMessage $hook $payload $files
+    }
+    return $true
+}
+
 function Format-Size([long]$n) {
     if ($n -ge 1GB) { return '{0:N2} GB' -f ($n / 1GB) }
     if ($n -ge 1MB) { return '{0:N1} MB' -f ($n / 1MB) }
@@ -787,6 +861,9 @@ function Invoke-Batch([string]$csvPath) {
             $nums = @($rel.assets | ForEach-Object { if ($_.name -match '^m(\d+)') { [int]$Matches[1] } })
             $n = if ($nums.Count) { [int](($nums | Measure-Object -Maximum).Maximum) + 1 } else { 1 }
             $nameLines = New-Object System.Collections.Generic.List[string]
+            $notify = New-Object System.Collections.Generic.List[object]
+            $wasNew = [bool]$rel.draft
+            $keepDir = Join-Path $tmp 'notify'; New-Item -ItemType Directory -Force -Path $keepDir | Out-Null
             $relSim = Get-BodySim ([string]$rel.body)
             # この小分類にあるマイドン：名前 → { Id, Zip数 }（同じ名前のシミュレーター違いは、ここに zip を足す）
             $here = @{}
@@ -824,6 +901,7 @@ function Invoke-Batch([string]$csvPath) {
                             if ($sim -ne $relSim) { $nameLines.Add("シミュレーター $($h.Id)_$($h.Zips): $sim") }
                             $okCount++
                             $log.Add("○ $($it.Name)（$sim 版を追加）")
+                            $notify.Add([pscustomobject]@{ Name = $it.Name; Image = $null; Note = "$sim 版を追加" })
                             continue
                         }
                         $id = 'm{0:D2}' -f $n; $n++
@@ -840,6 +918,10 @@ function Invoke-Batch([string]$csvPath) {
                         if ($sim -ne $relSim) { $nameLines.Add("シミュレーター ${id}: $sim") }
                         $okCount++
                         $log.Add("○ $($it.Name)" + $(if ($it.Note) { "（$($it.Note)）" } else { '' }))
+                        # 通知用にサムネを取っておく（作業フォルダは1件ごとに消えるので）
+                        $keep = $null
+                        if (@($it.Thumbs).Count) { $keep = Join-Path $keepDir ([guid]::NewGuid().ToString('N') + [IO.Path]::GetExtension($it.Thumbs[0]).ToLower()); Copy-Item -LiteralPath $it.Thumbs[0] -Destination $keep }
+                        $notify.Add([pscustomobject]@{ Name = $it.Name; Image = $keep; Note = $(if ($sim -ne $relSim) { "$sim 版" } else { '' }) })
                     }
                 } catch {
                     $log.Add("× $link → $($_.Exception.Message)")
@@ -851,6 +933,10 @@ function Invoke-Batch([string]$csvPath) {
             if ($nameLines.Count) {
                 $body = ([string]$rel.body).TrimEnd() + "`n" + ($nameLines -join "`n")
                 Invoke-Gh 'PATCH' "/releases/$($rel.id)" @{ body = $body; draft = $false } | Out-Null
+                try {
+                    $lblStatus.Text = "Discord に知らせています…（$title）"
+                    if (Send-DiscordNotify $title $cat $wasNew $notify) { $log.Add("（Discord に「$title」の $($notify.Count) 体を知らせました）") }
+                } catch { $log.Add("！ Discord に知らせられませんでした（$title）→ $($_.Exception.Message)") }
             } elseif ($rel.draft) {
                 Invoke-Gh 'DELETE' "/releases/$($rel.id)" $null | Out-Null
             }
@@ -908,7 +994,9 @@ function Add-Control($ctl, $x, $y, $w, $h = 26) {
 }
 
 # トークン
-$lblToken = Add-Label '' 16 12 296
+$lblToken = Add-Label '' 16 12 190
+$btnHook = Add-Control (New-Object System.Windows.Forms.Button) 210 10 100 28
+$btnHook.Text = 'Discord通知…'
 $btnToken = Add-Control (New-Object System.Windows.Forms.Button) 470 10 134 28
 $btnToken.Text = 'トークン設定'
 
@@ -982,7 +1070,8 @@ $script:releases = @()
 $script:token    = Get-Token
 
 function Update-TokenLabel {
-    if ($script:token) { $lblToken.Text = "✓ トークン設定済み（$Repo）"; $lblToken.ForeColor = [System.Drawing.Color]::DarkGreen }
+    $btnHook.Text = if (Get-Hook) { 'Discord通知 ✓' } else { 'Discord通知…' }
+    if ($script:token) { $lblToken.Text = '✓ トークン設定済み'; $lblToken.ForeColor = [System.Drawing.Color]::DarkGreen }
     elseif ($script:tokenError) { $lblToken.Text = "保存したトークンを読めませんでした：$script:tokenError"; $lblToken.ForeColor = [System.Drawing.Color]::Firebrick }
     else { $lblToken.Text = 'まず「トークン設定」をして下さい'; $lblToken.ForeColor = [System.Drawing.Color]::Firebrick }
 }
@@ -1049,6 +1138,21 @@ $btnToken.Add_Click({
         try { Save-Token $t.Trim() } catch { (Show-Msg ($_.Exception.Message)) | Out-Null }
         $script:token = $t.Trim(); Update-TokenLabel; Load-Releases
     }
+})
+$btnHook.Add_Click({
+    $now = Get-Hook
+    $msg = "投稿した時に Discord へ知らせる Webhook の URL を貼り付けて下さい。`n（チャンネルの設定 → 連携サービス → ウェブフック → 新しいウェブフック → URLをコピー）`n`n空にして OK を押すと、通知をやめます。"
+    $u = [Microsoft.VisualBasic.Interaction]::InputBox($msg, 'Discord通知', $(if ($now) { $now } else { '' }))
+    if ($u -eq '' -and -not $now) { return }
+    $u = $u.Trim()
+    if ($u -and $u -notmatch '^https://(ptb\.|canary\.)?(discord|discordapp)\.com/api/webhooks/\d+/[\w-]+$') { (Show-Msg ('Discord の Webhook の URL ではないようです。もう一度コピーして下さい。')) | Out-Null; return }
+    if ($u -eq $now) { return }
+    Save-Hook $u; Update-TokenLabel
+    if (-not $u) { $lblStatus.Text = 'Discord への通知をやめました。'; return }
+    try {
+        Send-DiscordMessage $u ([ordered]@{ username = 'マイドンラボ'; content = "マイドンラボの投稿ツールから、通知のテストです。`n$SiteUrl"; allowed_mentions = @{ parse = @() } }) @()
+        $lblStatus.Text = 'Discord 通知を設定しました（テストを送りました）。'
+    } catch { (Show-Msg ("保存はしましたが、テストを送れませんでした。`n`n$($_.Exception.Message)")) | Out-Null }
 })
 $rbNew.Add_CheckedChanged({ Update-Mode })
 $rbAdd.Add_CheckedChanged({ Update-Mode })
@@ -1169,6 +1273,7 @@ $btnPost.Add_Click({
         $total = 0; foreach ($m in $script:mydons) { $total += $m.Images.Count + $m.Zips.Count }
         $progress.Maximum = [Math]::Max(1, $total); $progress.Value = 0
         $n = [int]$start
+        $notify = New-Object System.Collections.Generic.List[object]
         $relSim = Get-BodySim $baseBody
         $norm = { param($t) (([string]$t).Normalize([Text.NormalizationForm]::FormKC) -replace '\s', '').ToLower() }
         foreach ($m in $script:mydons) {
@@ -1186,10 +1291,13 @@ $btnPost.Add_Click({
                     Send-Asset $rel.id $z $fname; $progress.Value++
                 }
                 $progress.Value = [Math]::Min($progress.Maximum, $progress.Value + $m.Images.Count)
+                $sims = @($m.Sims | Where-Object { $_ }) ; $what = if ($sims.Count) { ($sims -join '・') + ' 版を追加' } else { 'zip を追加' }
+                $notify.Add([pscustomobject]@{ Name = $m.Name; Image = $(if ($m.Images.Count) { $m.Images[0] } else { $null }); Note = $what })
                 continue
             }
             $id = 'm{0:D2}' -f $n
             $nameLines.Add("名前 ${id}: $($m.Name)")
+            $notify.Add([pscustomobject]@{ Name = $m.Name; Image = $(if ($m.Images.Count) { $m.Images[0] } else { $null }); Note = '' })
             $k = 0
             foreach ($im in $m.Images) {
                 $k++; $ext = [IO.Path]::GetExtension($im).ToLower()
@@ -1214,6 +1322,10 @@ $btnPost.Add_Click({
         Invoke-Gh 'PATCH' "/releases/$($rel.id)" @{ body = $body; draft = $false } | Out-Null
 
         $lblStatus.Text = "投稿しました！（$($script:mydons.Count) 体）サイトを再読み込みすると出ます。"
+        try {
+            $relCat = ''; foreach ($line in ($body -split "`r?`n")) { if ($line -match '^\s*(カテゴリ|category)\s*[:：;；]\s*(.+?)\s*$') { $relCat = $Matches[2]; break } }
+            if (Send-DiscordNotify ([string]$rel.name) $relCat ([bool]$rbNew.Checked) $notify) { $lblStatus.Text += '（Discord に知らせました）' }
+        } catch { $lblStatus.Text += "（Discord に知らせられませんでした：$($_.Exception.Message)）" }
         $script:mydons.Clear(); Update-List
         if ($rbNew.Checked) { $txtTitle.Text = ''; $txtTags.Text = ''; $txtDesc.Text = '' }
         Load-Releases
