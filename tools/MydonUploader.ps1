@@ -182,7 +182,11 @@ function Get-DlUrl($rel, [string]$fname) { "https://github.com/$Owner/$Repo/rele
 function Write-NotifyLog([string]$msg) {
     try { New-Item -ItemType Directory -Force -Path $ConfDir | Out-Null; [IO.File]::AppendAllText((Join-Path $ConfDir 'discord.log'), "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $msg`r`n", [Text.Encoding]::UTF8) } catch { }
 }
-# 投稿したマイドンを知らせる。$entries は {Name, Image(パス or 空), Note}
+# 投稿したマイドンを知らせる。$entries は {Name, Image(パス or 空), Zips=@({Sim, Url})}。1体につき1通
+#   新しいマイドンが追加されました
+#   （名前）（シミュレーター）
+#   （zip の直リンク）
+#   （画像）
 function Send-DiscordNotify([string]$title, [string]$cat, [bool]$isNew, $entries) {
     $hook = Get-Hook
     if (-not $hook) { Write-NotifyLog "送らない（Webhook が読めない）：$title"; return $false }
@@ -190,32 +194,18 @@ function Send-DiscordNotify([string]$title, [string]$cat, [bool]$isNew, $entries
     $entries = @(foreach ($x in $entries) { $x })
     if (-not $entries.Count) { Write-NotifyLog "送らない（知らせるマイドンが 0 体）：$title"; return $false }
     Write-NotifyLog "送る：$title（$($entries.Count) 体）"
-    $where = if ($cat) { "**$title**（$cat）" } else { "**$title**" }
-    $head = if ($isNew) { "新しい小分類 $where ができました！ マイドン $($entries.Count) 体" } else { "$where にマイドンが追加されました！ $($entries.Count) 体" }
-    for ($p = 0; $p -lt $entries.Count; $p += 10) {
-        $chunk = @($entries[$p..([Math]::Min($entries.Count, $p + 10) - 1)])
-        $files = @(); $embeds = @(); $size = 0
-        foreach ($e in $chunk) {
-            $emb = [ordered]@{ title = [string]$e.Name; color = 2073558 }
-            $links = @(foreach ($u in @($e.Links)) { if ($u) { [string]$u } })
-            # タイトルの行き先は zip の直リンク（1体ずつ違う URL なので、Discord に画像をまとめられない）
-            if ($links.Count) { $emb['url'] = $links[0] }
-            $desc = @(); if ($e.Note) { $desc += [string]$e.Note }; $desc += $links
-            if ($desc.Count) { $emb['description'] = ($desc -join "`n") }
-            if ($e.Image -and (Test-Path -LiteralPath $e.Image)) {
-                $len = (Get-Item -LiteralPath $e.Image).Length
-                if ($size + $len -lt 9MB) {
-                    $size += $len
-                    $emb['image'] = @{ url = "attachment://img$($files.Count)" + [IO.Path]::GetExtension($e.Image).ToLower() }
-                    $files += $e.Image
-                }
-            }
-            $embeds += $emb
-        }
-        $payload = [ordered]@{ username = 'マイドンラボ'; embeds = $embeds; allowed_mentions = @{ parse = @() } }
-        if ($p -eq 0) { $payload['content'] = "$head`n$SiteUrl" }
+    foreach ($e in $entries) {
+        $zips = @(foreach ($z in @($e.Zips)) { if ($z -and $z.Url) { $z } })
+        $sims = @($zips | ForEach-Object { [string]$_.Sim } | Where-Object { $_ } | Select-Object -Unique)
+        $lines = @('新しいマイドンが追加されました', (([string]$e.Name + ' ' + ($sims -join ' / ')).Trim()))
+        if ($zips.Count -le 1 -or $sims.Count -le 1) { $lines += @($zips | ForEach-Object { [string]$_.Url }) }
+        else { $lines += @($zips | ForEach-Object { "$($_.Sim)：$($_.Url)" }) }
+        $files = @()
+        if ($e.Image -and (Test-Path -LiteralPath $e.Image) -and (Get-Item -LiteralPath $e.Image).Length -lt 9MB) { $files += $e.Image }
+        # flags 4 = リンクのプレビューを出さない（画像だけを下に出す）
+        $payload = [ordered]@{ username = 'マイドンラボ'; content = ($lines -join "`n"); flags = 4; allowed_mentions = @{ parse = @() } }
         try { Send-DiscordMessage $hook $payload $files }
-        catch { Write-NotifyLog "失敗：$title → $($_.Exception.Message)"; throw }
+        catch { Write-NotifyLog "失敗：$title / $($e.Name) → $($_.Exception.Message)"; throw }
     }
     Write-NotifyLog "送った：$title"
     return $true
@@ -914,7 +904,7 @@ function Invoke-Batch([string]$csvPath) {
                             if ($sim -ne $relSim) { $nameLines.Add("シミュレーター $($h.Id)_$($h.Zips): $sim") }
                             $okCount++
                             $log.Add("○ $($it.Name)（$sim 版を追加）")
-                            $notify.Add([pscustomobject]@{ Name = $it.Name; Image = $null; Note = "$sim 版を追加"; Links = @(Get-DlUrl $rel $fname) })
+                            $notify.Add([pscustomobject]@{ Name = $it.Name; Image = $null; Zips = @([pscustomobject]@{ Sim = $sim; Url = (Get-DlUrl $rel $fname) }) })
                             continue
                         }
                         $id = 'm{0:D2}' -f $n; $n++
@@ -934,7 +924,7 @@ function Invoke-Batch([string]$csvPath) {
                         # 通知用にサムネを取っておく（作業フォルダは1件ごとに消えるので）
                         $keep = $null
                         if (@($it.Thumbs).Count) { $keep = Join-Path $keepDir ([guid]::NewGuid().ToString('N') + [IO.Path]::GetExtension($it.Thumbs[0]).ToLower()); Copy-Item -LiteralPath $it.Thumbs[0] -Destination $keep }
-                        $notify.Add([pscustomobject]@{ Name = $it.Name; Image = $keep; Note = $(if ($sim -ne $relSim) { "$sim 版" } else { '' }); Links = @(Get-DlUrl $rel "$id$zext") })
+                        $notify.Add([pscustomobject]@{ Name = $it.Name; Image = $keep; Zips = @([pscustomobject]@{ Sim = $sim; Url = (Get-DlUrl $rel "$id$zext") }) })
                     }
                 } catch {
                     $log.Add("× $link → $($_.Exception.Message)")
@@ -1163,10 +1153,7 @@ $btnHook.Add_Click({
     if ($u -eq $now) { return }
     Save-Hook $u; Update-TokenLabel
     if (-not $u) { $lblStatus.Text = 'Discord への通知をやめました。'; return }
-    try {
-        Send-DiscordMessage $u ([ordered]@{ username = 'マイドンラボ'; content = "マイドンラボの投稿ツールから、通知のテストです。`n$SiteUrl"; allowed_mentions = @{ parse = @() } }) @()
-        $lblStatus.Text = 'Discord 通知を設定しました（テストを送りました）。'
-    } catch { (Show-Msg ("保存はしましたが、テストを送れませんでした。`n`n$($_.Exception.Message)")) | Out-Null }
+    $lblStatus.Text = 'Discord 通知を設定しました。次の投稿から知らせます。'
 })
 $rbNew.Add_CheckedChanged({ Update-Mode })
 $rbAdd.Add_CheckedChanged({ Update-Mode })
@@ -1304,16 +1291,15 @@ $btnPost.Add_Click({
                     $sim = [string]$m.Sims[$i]; if ($sim -and $sim -ne $relSim) { $nameLines.Add("シミュレーター ${id}_${k}: $sim") }
                     $lblStatus.Text = "「$($m.Name)」に zip を追加中… $fname（$(Format-Size (Get-Item $z).Length)）"
                     Send-Asset $rel.id $z $fname; $progress.Value++
-                    $addLinks += (Get-DlUrl $rel $fname)
+                    $addLinks += [pscustomobject]@{ Sim = $(if ($sim) { $sim } else { $relSim }); Url = (Get-DlUrl $rel $fname) }
                 }
                 $progress.Value = [Math]::Min($progress.Maximum, $progress.Value + $m.Images.Count)
-                $sims = @($m.Sims | Where-Object { $_ }) ; $what = if ($sims.Count) { ($sims -join '・') + ' 版を追加' } else { 'zip を追加' }
-                $notify.Add([pscustomobject]@{ Name = $m.Name; Image = $(if ($m.Images.Count) { $m.Images[0] } else { $null }); Note = $what; Links = $addLinks })
+                $notify.Add([pscustomobject]@{ Name = $m.Name; Image = $(if ($m.Images.Count) { $m.Images[0] } else { $null }); Zips = $addLinks })
                 continue
             }
             $id = 'm{0:D2}' -f $n
             $nameLines.Add("名前 ${id}: $($m.Name)")
-            $ent = [pscustomobject]@{ Name = $m.Name; Image = $(if ($m.Images.Count) { $m.Images[0] } else { $null }); Note = ''; Links = @() }
+            $ent = [pscustomobject]@{ Name = $m.Name; Image = $(if ($m.Images.Count) { $m.Images[0] } else { $null }); Zips = @() }
             $notify.Add($ent)
             $k = 0
             foreach ($im in $m.Images) {
@@ -1329,7 +1315,7 @@ $btnPost.Add_Click({
                 $sim = [string]$m.Sims[$k - 1]; if ($sim -and $sim -ne $relSim) { $nameLines.Add("シミュレーター $([IO.Path]::GetFileNameWithoutExtension($fname)): $sim") }
                 $lblStatus.Text = "「$($m.Name)」の zip をアップロード中… $fname（$(Format-Size (Get-Item $z).Length)）"
                 Send-Asset $rel.id $z $fname; $progress.Value++
-                $ent.Links = @($ent.Links) + (Get-DlUrl $rel $fname)
+                $ent.Zips = @($ent.Zips) + [pscustomobject]@{ Sim = $(if ($sim) { $sim } else { $relSim }); Url = (Get-DlUrl $rel $fname) }
             }
             $n++
         }
