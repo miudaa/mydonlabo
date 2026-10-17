@@ -1128,7 +1128,7 @@ function Load-Releases([switch]$Keep) {
             $label = if ($cat) { "$($r.name)（$cat）" } else { $r.name }
             [void]$cbExisting.Items.Add($label)
         }
-        $keep = $cbCat.Text; $cbCat.Items.Clear(); foreach ($c in $cats) { [void]$cbCat.Items.Add($c) }; $cbCat.Text = $keep
+        $catText = $cbCat.Text; $cbCat.Items.Clear(); foreach ($c in $cats) { [void]$cbCat.Items.Add($c) }; $cbCat.Text = $catText
         if ($cbExisting.Items.Count) { $cbExisting.SelectedIndex = 0 }
         $lblStatus.Text = if ($Keep) { $before } else { "小分類 $($script:releases.Count) 件を読み込みました" }
     } catch { $lblStatus.Text = $_.Exception.Message }
