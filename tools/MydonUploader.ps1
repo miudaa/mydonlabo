@@ -178,11 +178,17 @@ function Send-DiscordMessage([string]$hook, $payload, [string[]]$files) {
     }
     throw 'Discord が混んでいて送れませんでした。'
 }
+function Write-NotifyLog([string]$msg) {
+    try { New-Item -ItemType Directory -Force -Path $ConfDir | Out-Null; [IO.File]::AppendAllText((Join-Path $ConfDir 'discord.log'), "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $msg`r`n", [Text.Encoding]::UTF8) } catch { }
+}
 # 投稿したマイドンを知らせる。$entries は {Name, Image(パス or 空), Note}
 function Send-DiscordNotify([string]$title, [string]$cat, [bool]$isNew, $entries) {
     $hook = Get-Hook
-    if (-not $hook -or -not @($entries).Count) { return $false }
-    $entries = @($entries)
+    if (-not $hook) { Write-NotifyLog "送らない（Webhook が読めない）：$title"; return $false }
+    # List をそのまま @() で包むと「Argument types do not match」になることがあるので、1つずつ取り出して配列にする
+    $entries = @(foreach ($x in $entries) { $x })
+    if (-not $entries.Count) { Write-NotifyLog "送らない（知らせるマイドンが 0 体）：$title"; return $false }
+    Write-NotifyLog "送る：$title（$($entries.Count) 体）"
     $where = if ($cat) { "**$title**（$cat）" } else { "**$title**" }
     $head = if ($isNew) { "新しい小分類 $where ができました！ マイドン $($entries.Count) 体" } else { "$where にマイドンが追加されました！ $($entries.Count) 体" }
     for ($p = 0; $p -lt $entries.Count; $p += 10) {
@@ -190,21 +196,23 @@ function Send-DiscordNotify([string]$title, [string]$cat, [bool]$isNew, $entries
         $files = @(); $embeds = @(); $size = 0
         foreach ($e in $chunk) {
             $emb = [ordered]@{ title = [string]$e.Name; color = 2073558 }   # url を同じにすると Discord が画像を1つにまとめてしまうので付けない
-            if ($e.Note) { $emb.description = [string]$e.Note }
+            if ($e.Note) { $emb['description'] = [string]$e.Note }
             if ($e.Image -and (Test-Path -LiteralPath $e.Image)) {
                 $len = (Get-Item -LiteralPath $e.Image).Length
                 if ($size + $len -lt 9MB) {
                     $size += $len
-                    $emb.image = @{ url = "attachment://img$($files.Count)" + [IO.Path]::GetExtension($e.Image).ToLower() }
+                    $emb['image'] = @{ url = "attachment://img$($files.Count)" + [IO.Path]::GetExtension($e.Image).ToLower() }
                     $files += $e.Image
                 }
             }
             $embeds += $emb
         }
         $payload = [ordered]@{ username = 'マイドンラボ'; embeds = $embeds; allowed_mentions = @{ parse = @() } }
-        if ($p -eq 0) { $payload.content = "$head`n$SiteUrl" }
-        Send-DiscordMessage $hook $payload $files
+        if ($p -eq 0) { $payload['content'] = "$head`n$SiteUrl" }
+        try { Send-DiscordMessage $hook $payload $files }
+        catch { Write-NotifyLog "失敗：$title → $($_.Exception.Message)"; throw }
     }
+    Write-NotifyLog "送った：$title"
     return $true
 }
 
@@ -379,7 +387,7 @@ function Show-MoveDialog {
     try {
         $r = Invoke-Move $srcRel $stems $dest $cCat.Text.Trim() $tTitle.Text.Trim() $chk.Checked
         $lblStatus.Text = "移動しました！「$($r.Title)」に $($r.Count) 体を移しました。サイトを再読み込みすると出ます。"
-        Load-Releases
+        Load-Releases -Keep
     } catch {
         $lblStatus.Text = 'エラー：' + $_.Exception.Message
         (Show-Msg ("移動の途中で止まりました。`n`n$($_.Exception.Message)`n`n移動元からはまだ消していません。移動先に途中まで上がったファイルがあれば、GitHub で削除して下さい。")) | Out-Null
@@ -557,7 +565,7 @@ function Show-MergeDialog {
     try {
         $count = Invoke-Merge $sel $tTitle.Text.Trim() $cCat.Text.Trim() $chk.Checked
         $lblStatus.Text = "まとめました！「$($tTitle.Text.Trim())」に $count 体を入れました。サイトを再読み込みすると出ます。"
-        Load-Releases
+        Load-Releases -Keep
     } catch {
         $lblStatus.Text = 'エラー：' + $_.Exception.Message
         (Show-Msg ("まとめる途中で止まりました。`n`n$($_.Exception.Message)`n`n元の小分類はまだ消していません。まとめ先に途中まで上がったファイルがあれば、GitHub で削除して下さい。")) | Out-Null
@@ -657,11 +665,11 @@ function Show-CatMoveDialog {
             }
             $lblStatus.Text = "移動しました！ $done 体を「$cat」へ移しました。サイトを再読み込みすると出ます。"
         }
-        Load-Releases
+        Load-Releases -Keep
     } catch {
         $lblStatus.Text = 'エラー：' + $_.Exception.Message
         (Show-Msg ("途中で止まりました（$done 件は移動済み）。`n`n$($_.Exception.Message)`n`n移し終わっていない分は、元の場所に残っています。")) | Out-Null
-        Load-Releases
+        Load-Releases -Keep
     } finally { foreach ($b in @($btnPost, $btnCatMove, $btnMove, $btnMerge, $btnBatch)) { $b.Enabled = $true } }
 }
 
@@ -964,7 +972,7 @@ function Start-Batch {
         $r = Invoke-Batch $dlg.FileName
         $lblStatus.Text = "一括投稿が終わりました：成功 $($r.Ok) 体 / 被り $($r.Skip) 体 / 失敗 $($r.Fail) 件"
         (Show-Msg ("終わりました！`n成功：$($r.Ok) 体`n被りで飛ばした：$($r.Skip) 体`n失敗：$($r.Fail) 件`n`n結果はこのファイルにまとめました：`n$($r.Log)")) | Out-Null
-        Load-Releases
+        Load-Releases -Keep
     } catch {
         $lblStatus.Text = 'エラー：' + $_.Exception.Message
         (Show-Msg ("止まりました。`n`n$($_.Exception.Message)")) | Out-Null
@@ -1109,8 +1117,9 @@ function Add-Mydon([string]$name, $images, $zips) {
     Update-List
 }
 
-function Load-Releases {
+function Load-Releases([switch]$Keep) {
     if (-not $script:token) { return }
+    $before = $lblStatus.Text
     $lblStatus.Text = 'GitHub から小分類の一覧を読み込み中…'
     try {
         $all = @(Invoke-Gh 'GET' '/releases?per_page=100' $null) | Where-Object { -not $_.draft }
@@ -1126,7 +1135,7 @@ function Load-Releases {
         }
         $keep = $cbCat.Text; $cbCat.Items.Clear(); foreach ($c in $cats) { [void]$cbCat.Items.Add($c) }; $cbCat.Text = $keep
         if ($cbExisting.Items.Count) { $cbExisting.SelectedIndex = 0 }
-        $lblStatus.Text = "小分類 $($script:releases.Count) 件を読み込みました"
+        $lblStatus.Text = if ($Keep) { $before } else { "小分類 $($script:releases.Count) 件を読み込みました" }
     } catch { $lblStatus.Text = $_.Exception.Message }
 }
 
@@ -1324,11 +1333,16 @@ $btnPost.Add_Click({
         $lblStatus.Text = "投稿しました！（$($script:mydons.Count) 体）サイトを再読み込みすると出ます。"
         try {
             $relCat = ''; foreach ($line in ($body -split "`r?`n")) { if ($line -match '^\s*(カテゴリ|category)\s*[:：;；]\s*(.+?)\s*$') { $relCat = $Matches[2]; break } }
-            if (Send-DiscordNotify ([string]$rel.name) $relCat ([bool]$rbNew.Checked) $notify) { $lblStatus.Text += '（Discord に知らせました）' }
-        } catch { $lblStatus.Text += "（Discord に知らせられませんでした：$($_.Exception.Message)）" }
+            $lblStatus.Text = 'Discord に知らせています…'
+            if (Send-DiscordNotify ([string]$rel.name) $relCat ([bool]$rbNew.Checked) $notify) { $lblStatus.Text = "投稿しました！（$($notify.Count) 体）Discord にも知らせました。" }
+            else { $lblStatus.Text = "投稿しました！（$($notify.Count) 体）※ Discord 通知は設定されていません。" }
+        } catch {
+            $lblStatus.Text = "投稿しました！（$($notify.Count) 体）※ Discord には知らせられませんでした。"
+            (Show-Msg ("投稿はできましたが、Discord に知らせられませんでした。`n`n$($_.Exception.Message)")) | Out-Null
+        }
         $script:mydons.Clear(); Update-List
         if ($rbNew.Checked) { $txtTitle.Text = ''; $txtTags.Text = ''; $txtDesc.Text = '' }
-        Load-Releases
+        Load-Releases -Keep
     } catch {
         $lblStatus.Text = 'エラー：' + $_.Exception.Message
         (Show-Msg ("投稿できませんでした。`n`n$($_.Exception.Message)`n`n途中まで上がった分は、GitHub の Releases に「下書き（Draft）」として残っています。不要なら削除して下さい。")) | Out-Null
