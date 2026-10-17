@@ -178,6 +178,7 @@ function Send-DiscordMessage([string]$hook, $payload, [string[]]$files) {
     }
     throw 'Discord が混んでいて送れませんでした。'
 }
+function Get-DlUrl($rel, [string]$fname) { "https://github.com/$Owner/$Repo/releases/download/$([Uri]::EscapeDataString([string]$rel.tag_name))/$([Uri]::EscapeDataString($fname))" }
 function Write-NotifyLog([string]$msg) {
     try { New-Item -ItemType Directory -Force -Path $ConfDir | Out-Null; [IO.File]::AppendAllText((Join-Path $ConfDir 'discord.log'), "$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') $msg`r`n", [Text.Encoding]::UTF8) } catch { }
 }
@@ -195,8 +196,12 @@ function Send-DiscordNotify([string]$title, [string]$cat, [bool]$isNew, $entries
         $chunk = @($entries[$p..([Math]::Min($entries.Count, $p + 10) - 1)])
         $files = @(); $embeds = @(); $size = 0
         foreach ($e in $chunk) {
-            $emb = [ordered]@{ title = [string]$e.Name; color = 2073558 }   # url を同じにすると Discord が画像を1つにまとめてしまうので付けない
-            if ($e.Note) { $emb['description'] = [string]$e.Note }
+            $emb = [ordered]@{ title = [string]$e.Name; color = 2073558 }
+            $links = @(foreach ($u in @($e.Links)) { if ($u) { [string]$u } })
+            # タイトルの行き先は zip の直リンク（1体ずつ違う URL なので、Discord に画像をまとめられない）
+            if ($links.Count) { $emb['url'] = $links[0] }
+            $desc = @(); if ($e.Note) { $desc += [string]$e.Note }; $desc += $links
+            if ($desc.Count) { $emb['description'] = ($desc -join "`n") }
             if ($e.Image -and (Test-Path -LiteralPath $e.Image)) {
                 $len = (Get-Item -LiteralPath $e.Image).Length
                 if ($size + $len -lt 9MB) {
@@ -899,17 +904,17 @@ function Invoke-Batch([string]$csvPath) {
                         $key = $nk + '|' + $sim.ToLower()
                         if ($seen.Contains($key)) { $log.Add("△ $($it.Name)（$sim 版がもうあるので飛ばしました）"); $skipCount++; continue }
                         [void]$seen.Add($key)
-                        $ext = [IO.Path]::GetExtension($it.Zip).ToLower(); if (-not $ext) { $ext = '.zip' }
+                        $zext = [IO.Path]::GetExtension($it.Zip).ToLower(); if (-not $zext) { $zext = '.zip' }
                         if ($here.ContainsKey($nk)) {
                             # 同じ名前のマイドンがこの小分類にある → シミュレーター違いの zip として足す
                             $h = $here[$nk]; $h.Zips++
-                            $fname = "$($h.Id)_$($h.Zips)$ext"
+                            $fname = "$($h.Id)_$($h.Zips)$zext"
                             $lblStatus.Text = "「$($it.Name)」に $sim 版を追加中…（$(Format-Size (Get-Item $it.Zip).Length)）"
                             Send-Asset $rel.id $it.Zip $fname
                             if ($sim -ne $relSim) { $nameLines.Add("シミュレーター $($h.Id)_$($h.Zips): $sim") }
                             $okCount++
                             $log.Add("○ $($it.Name)（$sim 版を追加）")
-                            $notify.Add([pscustomobject]@{ Name = $it.Name; Image = $null; Note = "$sim 版を追加" })
+                            $notify.Add([pscustomobject]@{ Name = $it.Name; Image = $null; Note = "$sim 版を追加"; Links = @(Get-DlUrl $rel $fname) })
                             continue
                         }
                         $id = 'm{0:D2}' -f $n; $n++
@@ -921,7 +926,7 @@ function Invoke-Batch([string]$csvPath) {
                             Send-Asset $rel.id $t $(if ($k -eq 1) { "$id$ext" } else { "${id}_$k$ext" })
                         }
                         $lblStatus.Text = "「$($it.Name)」をアップロード中…（$(Format-Size (Get-Item $it.Zip).Length)）"
-                        Send-Asset $rel.id $it.Zip "$id$ext"
+                        Send-Asset $rel.id $it.Zip "$id$zext"
                         $nameLines.Add("名前 ${id}: $($it.Name)")
                         if ($sim -ne $relSim) { $nameLines.Add("シミュレーター ${id}: $sim") }
                         $okCount++
@@ -929,7 +934,7 @@ function Invoke-Batch([string]$csvPath) {
                         # 通知用にサムネを取っておく（作業フォルダは1件ごとに消えるので）
                         $keep = $null
                         if (@($it.Thumbs).Count) { $keep = Join-Path $keepDir ([guid]::NewGuid().ToString('N') + [IO.Path]::GetExtension($it.Thumbs[0]).ToLower()); Copy-Item -LiteralPath $it.Thumbs[0] -Destination $keep }
-                        $notify.Add([pscustomobject]@{ Name = $it.Name; Image = $keep; Note = $(if ($sim -ne $relSim) { "$sim 版" } else { '' }) })
+                        $notify.Add([pscustomobject]@{ Name = $it.Name; Image = $keep; Note = $(if ($sim -ne $relSim) { "$sim 版" } else { '' }); Links = @(Get-DlUrl $rel "$id$zext") })
                     }
                 } catch {
                     $log.Add("× $link → $($_.Exception.Message)")
@@ -1289,6 +1294,7 @@ $btnPost.Add_Click({
             # 同じ名前のマイドンがもうこの小分類にある時は、そのマイドンに zip を足す（シミュレーター違いの版など）
             $same = @($existing | Where-Object { (& $norm $_.Name) -eq (& $norm $m.Name) }) | Select-Object -First 1
             if ($same) {
+                $addLinks = @()
                 $id = $same.Stem
                 $k = @($same.Files).Count
                 for ($i = 0; $i -lt $m.Zips.Count; $i++) {
@@ -1298,15 +1304,17 @@ $btnPost.Add_Click({
                     $sim = [string]$m.Sims[$i]; if ($sim -and $sim -ne $relSim) { $nameLines.Add("シミュレーター ${id}_${k}: $sim") }
                     $lblStatus.Text = "「$($m.Name)」に zip を追加中… $fname（$(Format-Size (Get-Item $z).Length)）"
                     Send-Asset $rel.id $z $fname; $progress.Value++
+                    $addLinks += (Get-DlUrl $rel $fname)
                 }
                 $progress.Value = [Math]::Min($progress.Maximum, $progress.Value + $m.Images.Count)
                 $sims = @($m.Sims | Where-Object { $_ }) ; $what = if ($sims.Count) { ($sims -join '・') + ' 版を追加' } else { 'zip を追加' }
-                $notify.Add([pscustomobject]@{ Name = $m.Name; Image = $(if ($m.Images.Count) { $m.Images[0] } else { $null }); Note = $what })
+                $notify.Add([pscustomobject]@{ Name = $m.Name; Image = $(if ($m.Images.Count) { $m.Images[0] } else { $null }); Note = $what; Links = $addLinks })
                 continue
             }
             $id = 'm{0:D2}' -f $n
             $nameLines.Add("名前 ${id}: $($m.Name)")
-            $notify.Add([pscustomobject]@{ Name = $m.Name; Image = $(if ($m.Images.Count) { $m.Images[0] } else { $null }); Note = '' })
+            $ent = [pscustomobject]@{ Name = $m.Name; Image = $(if ($m.Images.Count) { $m.Images[0] } else { $null }); Note = ''; Links = @() }
+            $notify.Add($ent)
             $k = 0
             foreach ($im in $m.Images) {
                 $k++; $ext = [IO.Path]::GetExtension($im).ToLower()
@@ -1321,6 +1329,7 @@ $btnPost.Add_Click({
                 $sim = [string]$m.Sims[$k - 1]; if ($sim -and $sim -ne $relSim) { $nameLines.Add("シミュレーター $([IO.Path]::GetFileNameWithoutExtension($fname)): $sim") }
                 $lblStatus.Text = "「$($m.Name)」の zip をアップロード中… $fname（$(Format-Size (Get-Item $z).Length)）"
                 Send-Asset $rel.id $z $fname; $progress.Value++
+                $ent.Links = @($ent.Links) + (Get-DlUrl $rel $fname)
             }
             $n++
         }
