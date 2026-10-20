@@ -106,6 +106,13 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
 .advbtn .n{background:var(--accent);color:var(--accent-ink);border-radius:999px;font-size:10px;min-width:16px;height:16px;padding:0 4px;display:inline-grid;place-items:center}
 .advbtn .car{font-size:10px;transition:transform .15s}
 .advbtn[aria-expanded="true"] .car{transform:rotate(180deg)}
+.admin{position:relative;display:flex;gap:6px;flex:none}
+#tagBtn{display:flex;align-items:center;gap:5px}
+#tagBtn .n{background:var(--accent);color:var(--accent-ink);border-radius:999px;font-size:10px;min-width:16px;height:16px;padding:0 4px;display:inline-grid;place-items:center}
+.tagpop{position:absolute;right:0;top:calc(100% + 6px);width:min(360px,calc(100vw - 28px));z-index:21;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;display:grid;gap:10px;box-shadow:0 10px 28px rgba(0,0,0,.18)}
+.tagpop p{margin:0}
+.tagadd{display:flex;gap:6px}
+.tagadd input{flex:1;min-width:0}
 .adv{position:absolute;right:0;top:calc(100% + 6px);width:min(520px,calc(100vw - 28px));z-index:20;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;display:grid;gap:10px;box-shadow:0 10px 28px rgba(0,0,0,.18)}
 .arow{display:grid;grid-template-columns:7em 1fr;gap:8px;align-items:center;min-width:0}
 .arow.end{grid-template-columns:1fr;justify-items:end}
@@ -251,7 +258,10 @@ input,select{background:var(--panel);color:var(--ink);border:1px solid var(--lin
     <div class="arow end"><button class="btn" id="advReset" type="button">条件をリセット</button></div>
   </div>
   </div>
-  <a class="btn" id="postLink" hidden href="https://github.com" target="_blank" rel="noopener" title="管理者用：GitHub でリリースを作成">＋ 投稿</a></div>
+  <div class="admin" id="adminBox" hidden><button class="btn" id="tagBtn" type="button" aria-expanded="false" aria-controls="tagPop">＋ タグ<span class="n" id="tagN" hidden></span></button>
+    <div class="tagpop" id="tagPop" hidden><p class="alabel">投稿に付けるタグ（押すと選択）</p><div class="chips" id="tagPick"></div>
+      <form class="tagadd" id="tagAdd" autocomplete="off"><input id="tagNew" type="text" placeholder="新しいタグ（例：AIドン亜種）" aria-label="新しいタグ"><button class="btn" type="submit">＋ 追加</button></form></div>
+    <a class="btn" id="postLink" href="https://github.com" target="_blank" rel="noopener" title="管理者用：GitHub でリリースを作成">＋ 投稿</a></div></div>
 </header>
 <main>
   <p class="note onbg" id="demoNote" hidden>プレビュー：サンプルデータを表示しています。公開版では GitHub のリリースがここに並びます。</p>
@@ -671,7 +681,7 @@ function applyTheme(){
 }
 $('#themeBtn').addEventListener('click', () => { const i = THEMES.findIndex(t => t[0] === theme); theme = THEMES[(i + 1) % THEMES.length][0]; applyTheme(); });
 applyTheme();
-const syncAdmin = () => { $('#postLink').hidden = location.hash !== '#admin'; };
+const syncAdmin = () => { $('#adminBox').hidden = location.hash !== '#admin'; };
 window.addEventListener('hashchange', syncAdmin);
 syncAdmin();
 document.querySelector('.brand').addEventListener('click', e => { e.preventDefault(); window.scrollTo({ top: 0, behavior: 'smooth' }); });
@@ -776,6 +786,32 @@ document.addEventListener('keydown', e => {
 });
 try { if (localStorage.getItem(TERMS_KEY) !== TERMS_VER) showTerms(false); } catch { showTerms(false); }
 
+// ----- 投稿用のタグ選び（#admin の時だけ）。いつものタグは押すだけ、新しいタグは「＋ 追加」で増やせる -----
+const TAG_KEY = 'mydon-admin-tags', TAG_DEFAULT = ['コラボ', '特殊', '回転'];
+S.postTags = new Set();
+const savedTags = () => { try { return JSON.parse(localStorage.getItem(TAG_KEY) || '[]'); } catch { return []; } };
+function tagChoices(){
+  const fromPosts = S.posts.flatMap(p => p.tags || []);
+  return [...new Set([...TAG_DEFAULT, ...savedTags(), ...fromPosts, ...S.postTags])].filter(Boolean);
+}
+function renderTagPick(){
+  $('#tagPick').innerHTML = tagChoices().map(t => `<button type="button" class="tchip" data-ptag="${esc(t)}" aria-pressed="${S.postTags.has(t)}">${esc(t)}</button>`).join('');
+  $('#tagN').hidden = !S.postTags.size; $('#tagN').textContent = S.postTags.size;
+}
+$('#tagBtn').addEventListener('click', () => { const p = $('#tagPop'); p.hidden = !p.hidden; $('#tagBtn').setAttribute('aria-expanded', !p.hidden); if (!p.hidden) renderTagPick(); });
+$('#tagPick').addEventListener('click', e => {
+  const b = e.target.closest('[data-ptag]'); if (!b) return;
+  const t = b.dataset.ptag; S.postTags.has(t) ? S.postTags.delete(t) : S.postTags.add(t); renderTagPick();
+});
+$('#tagAdd').addEventListener('submit', e => {
+  e.preventDefault();
+  const t = $('#tagNew').value.trim().replace(/[,、，\s]+/g, ''); if (!t) return;
+  const list = savedTags(); if (!list.includes(t)) { list.push(t); try { localStorage.setItem(TAG_KEY, JSON.stringify(list)); } catch {} }
+  S.postTags.add(t); $('#tagNew').value = ''; renderTagPick();
+});
+// 押した直後に作り直したボタンでも閉じないように、composedPath で外側かどうかを見る
+document.addEventListener('click', e => { if (!$('#tagPop').hidden && !e.composedPath().includes($('#adminBox'))) { $('#tagPop').hidden = true; $('#tagBtn').setAttribute('aria-expanded', 'false'); } });
+
 // ----- 起動 -----
 (async () => {
   if (DEMO) {
@@ -786,7 +822,7 @@ try { if (localStorage.getItem(TERMS_KEY) !== TERMS_VER) showTerms(false); } cat
     const postUrl = () => {
       const d = new Date(), z = n => String(n).padStart(2, '0');
       const tag = `post-${d.getFullYear()}${z(d.getMonth() + 1)}${z(d.getDate())}-${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`;
-      const q = new URLSearchParams({ tag, body: 'カテゴリ: \nタグ: \nfps: 60\nカラー: default\nシミュレーター: taikonauts\n' });
+      const q = new URLSearchParams({ tag, body: `カテゴリ: \nタグ: ${[...S.postTags].join(', ')}\nfps: 60\nカラー: default\nシミュレーター: taikonauts\n` });
       return `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/releases/new?${q}`;
     };
     const link = $('#postLink');
