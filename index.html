@@ -794,7 +794,7 @@ document.addEventListener('keydown', e => {
 try { if (localStorage.getItem(TERMS_KEY) !== TERMS_VER) showTerms(false); } catch { showTerms(false); }
 
 // ----- 投稿フォーム（#admin の時だけ）。選んだ内容で GitHub の投稿画面を開く -----
-const TAG_KEY = 'mydon-admin-tags', TAG_DEFAULT = ['コラボ', '特殊', '回転'], NEWV = '\u0000new';
+const TAG_KEY = 'mydon-admin-tags', TAG_DEFAULT = ['コラボ', '特殊', '回転'], NEWV = '__new__';
 const savedTags = () => { try { return JSON.parse(localStorage.getItem(TAG_KEY) || '[]'); } catch { return []; } };
 const PF = { names: [''], cat: '', catNew: '', sub: NEWV, subNew: '', tags: new Set(), fps: '60', color: 'default', colors: [], sim: SIM_LIST[0] };
 const mnum = n => 'm' + String(n).padStart(2, '0');
@@ -849,7 +849,10 @@ function renderPostForm(){
   </form>`;
   pfRefresh();
 }
-function openPostForm(){ $('.mbox').classList.add('wide'); renderPostForm(); $('#modal').hidden = false; $('.mbox').scrollTop = 0; }
+function openPostForm(){
+  // 開くたびに「新しい小分類」から始める（前に選んだ小分類のままにならないように）
+  PF.sub = NEWV; PF.subNew = ''; PF.names = [''];
+  $('.mbox').classList.add('wide'); renderPostForm(); $('#modal').hidden = false; $('.mbox').scrollTop = 0; }
 $('#postBtn').addEventListener('click', openPostForm);
 $('#mbody').addEventListener('input', e => {
   const t = e.target;
