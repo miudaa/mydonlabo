@@ -282,8 +282,7 @@ function Invoke-Move($srcRel, [string[]]$stems, $dest, [string]$newCat, [string]
     $tmp = Join-Path ([IO.Path]::GetTempPath()) ('MydonLaboMove_' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Force -Path $tmp | Out-Null
     try {
-        $nums = @($target.assets | ForEach-Object { if ($_.name -match '^m(\d+)') { [int]$Matches[1] } })
-        $n = if ($nums.Count) { [int](($nums | Measure-Object -Maximum).Maximum) + 1 } else { 1 }
+        $n = Get-NextNum $target   # 本文の「名前 mNN」とも被らない番号から
         $total = 0; foreach ($it in $items) { $total += $it.Images.Count + $it.Files.Count }
         $progress.Maximum = [Math]::Max(1, $total * 2); $progress.Value = 0
         $nameLines = New-Object System.Collections.Generic.List[string]
@@ -395,6 +394,22 @@ function Get-BodyNames([string]$body) {
     return $map
 }
 
+# 本文に「名前 m17: 六段」の行だけあって、まだファイルが無い番号（空き枠）を探す → 名前（比べやすい形）→ 番号
+function Get-EmptySlots($rel, $norm) {
+    $names = Get-BodyNames ([string]$rel.body)
+    $used = @{}
+    foreach ($a in @($rel.assets)) { $used[([IO.Path]::GetFileNameWithoutExtension($a.name).ToLower() -replace '_\d+$', '')] = 1 }
+    $slots = @{}
+    foreach ($k in @($names.Keys)) { if ($k -match '^m\d+$' -and -not $used.ContainsKey($k)) { $slots[(& $norm $names[$k])] = $k } }
+    return $slots
+}
+# 次に使う番号：ファイルの番号と、本文の「名前 mNN」の番号の、どちらよりも後ろ
+function Get-NextNum($rel) {
+    $nums = @(@($rel.assets) | ForEach-Object { if ($_.name -match '^m(\d+)') { [int]$Matches[1] } })
+    $nums += @(([string]$rel.body) -split "`r?`n" | ForEach-Object { if ($_ -match '^\s*名前\s+m(\d+)\s*[:：]') { [int]$Matches[1] } })
+    if ($nums.Count) { return [int](($nums | Measure-Object -Maximum).Maximum) + 1 } else { return 1 }
+}
+
 # 本文の「シミュレーター m01_2: TJAPlayer3」（zip ごとのシミュレーター）を読む
 $SimRe = '(シミュレーター|シミュレータ|simulator|sim)'
 function Get-BodySims([string]$body) {
@@ -489,8 +504,7 @@ function Invoke-Merge($rels, [string]$title, [string]$cat, [bool]$deleteOld) {
         foreach ($s in $sources) { foreach ($it in (Get-ReleaseItems $s)) { $jobs += [pscustomobject]@{ Item = $it; FromTarget = $false } } }
         $jobs = @($jobs | Where-Object { $_.Item.Images.Count -or $_.Item.Files.Count })
 
-        $nums = @($target.assets | ForEach-Object { if ($_.name -match '^m(\d+)') { [int]$Matches[1] } })
-        $n = if ($targetIsTool -and $nums.Count) { [int](($nums | Measure-Object -Maximum).Maximum) + 1 } else { 1 }
+        $n = if ($targetIsTool) { Get-NextNum $target } else { 1 }
         if (-not $targetIsTool -and $nums.Count) { $n = [int](($nums | Measure-Object -Maximum).Maximum) + 1 }
 
         $total = 0; foreach ($j in $jobs) { $total += $j.Item.Images.Count + $j.Item.Files.Count }
@@ -861,8 +875,9 @@ function Invoke-Batch([string]$csvPath) {
             if (-not $title) { $title = 'Discord配布' }
             $lblStatus.Text = "小分類「$title」を準備中…"
             $rel = Find-OrCreateRelease $cat $title
-            $nums = @($rel.assets | ForEach-Object { if ($_.name -match '^m(\d+)') { [int]$Matches[1] } })
-            $n = if ($nums.Count) { [int](($nums | Measure-Object -Maximum).Maximum) + 1 } else { 1 }
+            $n = Get-NextNum $rel
+            $slots = Get-EmptySlots $rel $norm
+            $changed = $false
             $nameLines = New-Object System.Collections.Generic.List[string]
             $notify = New-Object System.Collections.Generic.List[object]
             $wasNew = [bool]$rel.draft
@@ -900,14 +915,16 @@ function Invoke-Batch([string]$csvPath) {
                             $h = $here[$nk]; $h.Zips++
                             $fname = "$($h.Id)_$($h.Zips)$zext"
                             $lblStatus.Text = "「$($it.Name)」に $sim 版を追加中…（$(Format-Size (Get-Item $it.Zip).Length)）"
-                            Send-Asset $rel.id $it.Zip $fname
+                            Send-Asset $rel.id $it.Zip $fname; $changed = $true
                             if ($sim -ne $relSim) { $nameLines.Add("シミュレーター $($h.Id)_$($h.Zips): $sim") }
                             $okCount++
                             $log.Add("○ $($it.Name)（$sim 版を追加）")
                             $notify.Add([pscustomobject]@{ Name = $it.Name; Image = $null; Zips = @([pscustomobject]@{ Sim = $sim; Url = (Get-DlUrl $rel $fname) }) })
                             continue
                         }
-                        $id = 'm{0:D2}' -f $n; $n++
+                        # 本文に名前だけある空き枠なら、その番号を使う
+                        $isSlot = $slots.ContainsKey($nk)
+                        if ($isSlot) { $id = $slots[$nk]; $slots.Remove($nk) } else { $id = 'm{0:D2}' -f $n; $n++ }
                         $here[$nk] = [pscustomobject]@{ Id = $id; Zips = 1 }
                         $k = 0
                         foreach ($t in $it.Thumbs) {
@@ -916,8 +933,8 @@ function Invoke-Batch([string]$csvPath) {
                             Send-Asset $rel.id $t $(if ($k -eq 1) { "$id$ext" } else { "${id}_$k$ext" })
                         }
                         $lblStatus.Text = "「$($it.Name)」をアップロード中…（$(Format-Size (Get-Item $it.Zip).Length)）"
-                        Send-Asset $rel.id $it.Zip "$id$zext"
-                        $nameLines.Add("名前 ${id}: $($it.Name)")
+                        Send-Asset $rel.id $it.Zip "$id$zext"; $changed = $true
+                        if (-not $isSlot) { $nameLines.Add("名前 ${id}: $($it.Name)") }
                         if ($sim -ne $relSim) { $nameLines.Add("シミュレーター ${id}: $sim") }
                         $okCount++
                         $log.Add("○ $($it.Name)" + $(if ($it.Note) { "（$($it.Note)）" } else { '' }))
@@ -933,8 +950,8 @@ function Invoke-Batch([string]$csvPath) {
                     $progress.Value = [Math]::Min($progress.Maximum, $progress.Value + 1)
                 }
             }
-            if ($nameLines.Count) {
-                $body = ([string]$rel.body).TrimEnd() + "`n" + ($nameLines -join "`n")
+            if ($changed) {
+                $body = ([string]$rel.body).TrimEnd() + $(if ($nameLines.Count) { "`n" + ($nameLines -join "`n") } else { '' })
                 Invoke-Gh 'PATCH' "/releases/$($rel.id)" @{ body = $body; draft = $false } | Out-Null
                 try {
                     $lblStatus.Text = "Discord に知らせています…（$title）"
@@ -1264,8 +1281,7 @@ $btnPost.Add_Click({
             $baseBody = [string]$rel.body
             $desc = ''
             $existing = @(Get-ReleaseItems $rel | Where-Object { $_.Stem -match '^m\d+$' })
-            $nums = @($rel.assets | ForEach-Object { if ($_.name -match '^m(\d+)') { [int]$Matches[1] } })
-            $start = if ($nums.Count) { [int](($nums | Measure-Object -Maximum).Maximum) + 1 } else { 1 }
+            $start = Get-NextNum $rel
             # 前からある、名前の付いていないマイドンには、小分類の名前を付けておく
             $oldStems = @($rel.assets | Where-Object { $ImageExt -notcontains [IO.Path]::GetExtension($_.name).ToLower() } | ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_.name) } | Where-Object { $_ -notmatch '^m\d+' } | Select-Object -Unique)
             if ($oldStems.Count -eq 1 -and $baseBody -notmatch "(?m)^\s*名前\s+$([regex]::Escape($oldStems[0]))\s*[:：]") { $nameLines.Add("名前 $($oldStems[0]): $($rel.name)") }
@@ -1277,6 +1293,7 @@ $btnPost.Add_Click({
         $notify = New-Object System.Collections.Generic.List[object]
         $relSim = Get-BodySim $baseBody
         $norm = { param($t) (([string]$t).Normalize([Text.NormalizationForm]::FormKC) -replace '\s', '').ToLower() }
+        $slots = if ($rbNew.Checked) { @{} } else { Get-EmptySlots $rel $norm }
         foreach ($m in $script:mydons) {
             # 同じ名前のマイドンがもうこの小分類にある時は、そのマイドンに zip を足す（シミュレーター違いの版など）
             $same = @($existing | Where-Object { (& $norm $_.Name) -eq (& $norm $m.Name) }) | Select-Object -First 1
@@ -1297,8 +1314,10 @@ $btnPost.Add_Click({
                 $notify.Add([pscustomobject]@{ Name = $m.Name; Image = $(if ($m.Images.Count) { $m.Images[0] } else { $null }); Zips = $addLinks })
                 continue
             }
-            $id = 'm{0:D2}' -f $n
-            $nameLines.Add("名前 ${id}: $($m.Name)")
+            # 本文に名前だけある空き枠（例：名前 m17: 六段）なら、その番号を使う。無ければ新しい番号
+            $nk = & $norm $m.Name
+            if ($slots.ContainsKey($nk)) { $id = $slots[$nk]; $slots.Remove($nk) }
+            else { $id = 'm{0:D2}' -f $n; $n++; $nameLines.Add("名前 ${id}: $($m.Name)") }
             $ent = [pscustomobject]@{ Name = $m.Name; Image = $(if ($m.Images.Count) { $m.Images[0] } else { $null }); Zips = @() }
             $notify.Add($ent)
             $k = 0
@@ -1317,7 +1336,6 @@ $btnPost.Add_Click({
                 Send-Asset $rel.id $z $fname; $progress.Value++
                 $ent.Zips = @($ent.Zips) + [pscustomobject]@{ Sim = $(if ($sim) { $sim } else { $relSim }); Url = (Get-DlUrl $rel $fname) }
             }
-            $n++
         }
 
         $body = ($baseBody.TrimEnd() + "`n" + ($nameLines -join "`n"))
