@@ -322,6 +322,87 @@ function Invoke-Move($srcRel, [string[]]$stems, $dest, [string]$newCat, [string]
     }
 }
 
+# ---------- マイドンを削除（GitHub の編集画面を通さず、ファイルと名前の行を直接消す） ----------
+function Show-DeleteDialog {
+    if (-not $script:token) { (Show-Msg ('先に「トークン設定」をして下さい。')) | Out-Null; return }
+    if (-not $script:releases.Count) { Load-Releases }
+    if (-not $script:releases.Count) { (Show-Msg ('小分類がまだありません。')) | Out-Null; return }
+    $P = { param($x, $y) New-Object System.Drawing.Point ($x, $y) }
+    $S = { param($w, $h) New-Object System.Drawing.Size ($w, $h) }
+    $d = New-Object System.Windows.Forms.Form
+    $d.Text = 'マイドンを削除'; $d.Font = $font; $d.ClientSize = (& $S 460 470)
+    $d.StartPosition = 'CenterParent'; $d.FormBorderStyle = 'FixedDialog'; $d.MaximizeBox = $false; $d.MinimizeBox = $false
+    $l1 = New-Object System.Windows.Forms.Label; $l1.Text = '小分類'; $l1.Location = (& $P 14 12); $l1.Size = (& $S 432 22); $d.Controls.Add($l1)
+    $cSrc = New-Object System.Windows.Forms.ComboBox; $cSrc.DropDownStyle = 'DropDownList'; $cSrc.Location = (& $P 14 36); $cSrc.Size = (& $S 432 26); $d.Controls.Add($cSrc)
+    foreach ($item in $cbExisting.Items) { [void]$cSrc.Items.Add($item) }
+    $l2 = New-Object System.Windows.Forms.Label; $l2.Text = '消すものにチェック（元に戻せません）'; $l2.Location = (& $P 14 72); $l2.Size = (& $S 432 22); $d.Controls.Add($l2)
+    $clb = New-Object System.Windows.Forms.CheckedListBox; $clb.Location = (& $P 14 98); $clb.Size = (& $S 432 290); $clb.CheckOnClick = $true; $d.Controls.Add($clb)
+    $chk = New-Object System.Windows.Forms.CheckBox; $chk.Text = '空になったら、その小分類も削除する'; $chk.Checked = $true; $chk.Location = (& $P 14 396); $chk.Size = (& $S 432 24); $d.Controls.Add($chk)
+    $ok = New-Object System.Windows.Forms.Button; $ok.Text = '削除する'; $ok.Location = (& $P 254 428); $ok.Size = (& $S 92 30); $d.Controls.Add($ok)
+    $cancel = New-Object System.Windows.Forms.Button; $cancel.Text = 'やめる'; $cancel.Location = (& $P 354 428); $cancel.Size = (& $S 92 30); $cancel.DialogResult = 'Cancel'; $d.Controls.Add($cancel)
+    $d.CancelButton = $cancel
+    $script:delRows = @()
+    $cSrc.Add_SelectedIndexChanged({
+        $clb.Items.Clear(); $script:delRows = @()
+        $rel = $script:releases[$cSrc.SelectedIndex]
+        $items = @(Get-ReleaseItems $rel)
+        $owned = @{}
+        foreach ($it in $items) {
+            # その子の画像だけ（名前の合っていない「共有の画像」は含めない）
+            $mine = @($it.Images | Where-Object { $it.Stem -and (([IO.Path]::GetFileNameWithoutExtension($_.name).ToLower() -replace '[_\-\s]\d+$', '') -eq $it.Stem -or [IO.Path]::GetFileNameWithoutExtension($_.name).ToLower() -eq $it.Stem) })
+            if (-not $it.Stem) { $mine = @($it.Images) }
+            $assets = @($it.Files) + $mine
+            foreach ($a in $assets) { $owned[[string]$a.id] = 1 }
+            $script:delRows += [pscustomobject]@{ Label = $it.Name; Stem = $it.Stem; Assets = $assets }
+            [void]$clb.Items.Add("$($it.Name)（$((@($assets) | ForEach-Object { $_.name }) -join ', ')）")
+        }
+        # どのマイドンにも属していない余分なファイル
+        foreach ($a in @($rel.assets | Where-Object { -not $owned.ContainsKey([string]$_.id) })) {
+            $script:delRows += [pscustomobject]@{ Label = $a.name; Stem = ''; Assets = @($a) }
+            [void]$clb.Items.Add("（余分なファイル）$($a.name)")
+        }
+    })
+    $ok.Add_Click({
+        if ($clb.CheckedIndices.Count -lt 1) { (Show-Msg ('消すものを1つ以上チェックして下さい。')) | Out-Null; return }
+        $d.DialogResult = 'OK'; $d.Close()
+    })
+    if ($cbExisting.SelectedIndex -ge 0) { $cSrc.SelectedIndex = $cbExisting.SelectedIndex } else { $cSrc.SelectedIndex = 0 }
+    if ($d.ShowDialog($form) -ne 'OK') { return }
+    $rel = $script:releases[$cSrc.SelectedIndex]
+    $sel = @($clb.CheckedIndices | ForEach-Object { $script:delRows[$_] })
+    $names = ($sel | ForEach-Object { $_.Label }) -join "`n"
+    if ((Show-Msg ("「$($rel.name)」から、次のものを削除します。元に戻せません。`n`n$names") 'YesNo') -ne 'Yes') { return }
+    $btnPost.Enabled = $false; $btnDelM2.Enabled = $false
+    try {
+        $fresh = Invoke-Gh 'GET' "/releases/$($rel.id)" $null
+        $ids = @($sel | ForEach-Object { $_.Assets } | ForEach-Object { [string]$_.id } | Select-Object -Unique)
+        $progress.Maximum = [Math]::Max(1, $ids.Count); $progress.Value = 0
+        foreach ($id in $ids) {
+            $lblStatus.Text = "削除中…（$($progress.Value + 1) / $($ids.Count)）"
+            Invoke-Gh 'DELETE' "/releases/assets/$id" $null | Out-Null
+            $progress.Value++
+        }
+        $left = @($fresh.assets | Where-Object { $ids -notcontains [string]$_.id })
+        if (-not $left.Count -and $chk.Checked) {
+            Invoke-Gh 'DELETE' "/releases/$($fresh.id)" $null | Out-Null
+            try { Invoke-Gh 'DELETE' ('/git/refs/tags/' + [Uri]::EscapeDataString($fresh.tag_name)) $null | Out-Null } catch { }
+            $lblStatus.Text = "削除しました。空になったので、小分類「$($rel.name)」も削除しました。"
+        } else {
+            # 消した子の「名前」「シミュレーター」の行も消す
+            $stems = @($sel | ForEach-Object { $_.Stem } | Where-Object { $_ })
+            $fileStems = @($sel | ForEach-Object { $_.Assets } | ForEach-Object { [IO.Path]::GetFileNameWithoutExtension($_.name) })
+            $lines = @(([string]$fresh.body) -split "`r?`n") | Where-Object { -not ($_ -match '^\s*名前\s+(\S+?)\s*[:：]' -and $stems -contains $Matches[1].ToLower()) }
+            Invoke-Gh 'PATCH' "/releases/$($fresh.id)" @{ body = (Remove-SimLines ($lines -join "`n") $fileStems) } | Out-Null
+            $lblStatus.Text = "削除しました（$($sel.Count) 件）。サイトを再読み込みすると反映されます。"
+        }
+        Load-Releases -Keep
+    } catch {
+        $lblStatus.Text = 'エラー：' + $_.Exception.Message
+        (Show-Msg ("削除の途中で止まりました。`n`n$($_.Exception.Message)")) | Out-Null
+        Load-Releases -Keep
+    } finally { $btnPost.Enabled = $true; $btnDelM2.Enabled = $true }
+}
+
 function Show-MoveDialog {
     if (-not $script:token) { (Show-Msg ('先に「トークン設定」をして下さい。')) | Out-Null; return }
     if (-not $script:releases.Count) { Load-Releases }
@@ -1025,7 +1106,9 @@ $rbNew = Add-Control (New-Object System.Windows.Forms.RadioButton) 16 48 140
 $rbNew.Text = '新しい小分類を作る'; $rbNew.Checked = $true
 $rbAdd = Add-Control (New-Object System.Windows.Forms.RadioButton) 160 48 150
 $rbAdd.Text = '今ある小分類に追加'
-$cbExisting = Add-Control (New-Object System.Windows.Forms.ComboBox) 16 80 540
+$cbExisting = Add-Control (New-Object System.Windows.Forms.ComboBox) 16 80 420
+$btnDelM2 = Add-Control (New-Object System.Windows.Forms.Button) 442 79 114 28
+$btnDelM2.Text = 'マイドンを削除…'
 $cbExisting.DropDownStyle = 'DropDownList'; $cbExisting.Enabled = $false
 $btnReload = Add-Control (New-Object System.Windows.Forms.Button) 562 79 42 28
 $btnReload.Text = '↻'
@@ -1178,6 +1261,7 @@ $btnReload.Add_Click({ Load-Releases })
 $btnMerge.Add_Click({ Show-MergeDialog })
 $btnMove.Add_Click({ Show-MoveDialog })
 $btnCatMove.Add_Click({ Show-CatMoveDialog })
+$btnDelM2.Add_Click({ Show-DeleteDialog })
 $btnBatch.Add_Click({ Start-Batch })
 
 $btnAddM.Add_Click({
