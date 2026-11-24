@@ -29,9 +29,9 @@ bell.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="t
 document.body.insertAdjacentHTML('beforeend', `
 <div id="ntPop" role="dialog" aria-label="お知らせ" hidden>
   <div class="nt-head"><h2>お知らせ</h2><div class="nt-me" id="ntMe"></div><button class="nt-x" type="button" id="ntClose" aria-label="閉じる">×</button></div>
-  <div class="nt-tabs" role="tablist">${CHANNELS.map(c => `<button type="button" role="tab" data-ch="${c}" aria-selected="${c === 'notice'}"><span class="h">#</span>${c}</button>`).join('')}</div>
+  <div class="nt-tabs" role="tablist">${CHANNELS.map(c => `<button type="button" role="tab" data-ch="${c}" aria-selected="${c === 'notice'}">${c}</button>`).join('')}</div>
   <div class="nt-list" id="ntList" aria-live="polite"></div>
-  <form class="nt-compose" id="ntCompose" hidden><div class="nt-cbox"><textarea id="ntText" rows="1" placeholder="#notice に書く" aria-label="お知らせを書く"></textarea><button class="btn primary" type="submit">投稿</button></div></form>
+  <form class="nt-compose" id="ntCompose" hidden><div class="nt-cbox"><textarea id="ntText" rows="1" placeholder="notice に書く" aria-label="お知らせを書く"></textarea><button class="btn primary" type="submit">投稿</button></div></form>
 </div>
 <div id="ntLogin" hidden>
   <form class="nt-card" id="ntLoginForm" autocomplete="on" role="dialog" aria-modal="true" aria-labelledby="ntLoginH">
@@ -118,7 +118,7 @@ const z = n => String(n).padStart(2, '0');
 const avatar = (name, color, img) => `<span class="nt-av" style="background:${esc(color || colorOf(name || ''))}">${img ? `<img src="${esc(img)}" alt="">` : esc([...(name || '?')][0])}</span>`;
 function render(keep){
   const box = q('#ntList'), atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60, top = box.scrollTop;
-  if (!N.rows.length) { box.innerHTML = `<p class="nt-empty">#${esc(N.ch)} には、まだ何もありません。</p>`; return; }
+  if (!N.rows.length) { box.innerHTML = `<p class="nt-empty">${esc(N.ch)} には、まだ何もありません。</p>`; return; }
   let h = N.more ? '<button class="btn nt-more" type="button" id="ntOlder">前のお知らせを見る</button>' : '';
   let prev = null, prevDay = '';
   const tools = N.admin ? '<span class="nt-tools"><button type="button" data-edit>編集</button><button type="button" class="del" data-del>削除</button></span>' : '';
@@ -176,7 +176,7 @@ q('.nt-tabs').addEventListener('click', e => {
   const b = e.target.closest('[data-ch]'); if (!b || b.dataset.ch === N.ch) return;
   N.ch = b.dataset.ch; N.editing = null; closePick();
   document.querySelectorAll('.nt-tabs [data-ch]').forEach(x => x.setAttribute('aria-selected', x === b));
-  q('#ntText').placeholder = `#${N.ch} に書く`;
+  q('#ntText').placeholder = `${N.ch} に書く`;
   q('#ntList').innerHTML = '<p class="nt-empty">読み込み中…</p>';
   renderDots(); loadFeed();
 });
