@@ -28,10 +28,10 @@ bell.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="t
 
 document.body.insertAdjacentHTML('beforeend', `
 <div id="ntPop" role="dialog" aria-label="お知らせ" hidden>
-  <div class="nt-head"><b>お知らせ</b><div class="nt-me" id="ntMe"></div><button class="nt-x" type="button" id="ntClose" aria-label="閉じる">×</button></div>
+  <div class="nt-head"><h2>お知らせ</h2><div class="nt-me" id="ntMe"></div><button class="nt-x" type="button" id="ntClose" aria-label="閉じる">×</button></div>
   <div class="nt-tabs" role="tablist">${CHANNELS.map(c => `<button type="button" role="tab" data-ch="${c}" aria-selected="${c === 'notice'}"><span class="h">#</span>${c}</button>`).join('')}</div>
   <div class="nt-list" id="ntList" aria-live="polite"></div>
-  <form class="nt-compose" id="ntCompose" hidden><textarea id="ntText" rows="1" placeholder="お知らせを書く"></textarea><button class="btn primary" type="submit">投稿</button></form>
+  <form class="nt-compose" id="ntCompose" hidden><div class="nt-cbox"><textarea id="ntText" rows="1" placeholder="#notice に書く" aria-label="お知らせを書く"></textarea><button class="btn primary" type="submit">投稿</button></div></form>
 </div>
 <div id="ntLogin" hidden>
   <form class="nt-card" id="ntLoginForm" autocomplete="on" role="dialog" aria-modal="true" aria-labelledby="ntLoginH">
@@ -69,14 +69,14 @@ async function refreshMe(){
   if (!N.sb) { N.me = null; N.admin = false; renderMe(); return; }
   const { data: { session } } = await N.sb.auth.getSession();
   if (!session) { N.me = null; N.admin = false; renderMe(); return; }
-  const { data: p } = await N.sb.from('profiles').select('id, username').eq('id', session.user.id).maybeSingle();
+  const { data: p } = await N.sb.from('profiles').select('id, username, avatar, avatar_color').eq('id', session.user.id).maybeSingle();
   N.me = p || null;
   N.admin = !!(p && await N.sb.rpc('am_admin').then(r => r.data).catch(() => false));
   renderMe();
 }
 function renderMe(){
   q('#ntMe').innerHTML = N.me
-    ? `<span>${esc(N.me.username)}</span><button class="nt-link" type="button" id="ntOut">ログアウト</button>`
+    ? `${avatar(N.me.username, N.me.avatar_color, N.me.avatar)}<b>${esc(N.me.username)}</b><button class="nt-link" type="button" id="ntOut">ログアウト</button>`
     : `<button class="nt-link" type="button" id="ntIn">ログイン</button>`;
   q('#ntCompose').hidden = !N.admin;
 }
@@ -115,25 +115,25 @@ async function loadOlder(){
   render(true); box.scrollTop = box.scrollHeight - h;
 }
 const z = n => String(n).padStart(2, '0');
+const avatar = (name, color, img) => `<span class="nt-av" style="background:${esc(color || colorOf(name || ''))}">${img ? `<img src="${esc(img)}" alt="">` : esc([...(name || '?')][0])}</span>`;
 function render(keep){
   const box = q('#ntList'), atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 60, top = box.scrollTop;
   if (!N.rows.length) { box.innerHTML = `<p class="nt-empty">#${esc(N.ch)} には、まだ何もありません。</p>`; return; }
   let h = N.more ? '<button class="btn nt-more" type="button" id="ntOlder">前のお知らせを見る</button>' : '';
   let prev = null, prevDay = '';
+  const tools = N.admin ? '<span class="nt-tools"><button type="button" data-edit>編集</button><button type="button" class="del" data-del>削除</button></span>' : '';
   for (const m of N.rows) {
     const d = new Date(m.created_at), day = `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
-    if (day !== prevDay) { h += `<div class="nt-day">${day}</div>`; prev = null; prevDay = day; }
+    if (day !== prevDay) { h += `<div class="nt-day"><span>${day}</span></div>`; prev = null; prevDay = day; }
     const cont = prev && prev.author_name === m.author_name && d - new Date(prev.created_at) < 10 * 60 * 1000;
-    const bg = m.author_color || colorOf(m.author_name || '');
-    const av = `<span class="nt-av" style="background:${esc(bg)}">${m.author_avatar ? `<img src="${esc(m.author_avatar)}" alt="">` : esc([...(m.author_name || '?')][0])}</span>`;
     const rs = (m.reactions || []).map(r => `<button class="nt-r${r.me ? ' me' : ''}" type="button" data-e="${esc(r.e)}" aria-pressed="${!!r.me}" aria-label="${esc(r.e)} ${r.n}人">${esc(r.e)}<small>${r.n}</small></button>`).join('');
     const body = N.editing === m.id
-      ? `<div class="nt-edit"><textarea>${esc(m.body)}</textarea><div class="row"><button class="btn" type="button" data-ecancel>やめる</button><button class="btn primary" type="button" data-esave>保存</button></div></div>`
+      ? `<div class="nt-edit"><textarea aria-label="編集">${esc(m.body)}</textarea><div class="row"><button class="btn" type="button" data-ecancel>やめる</button><button class="btn primary" type="button" data-esave>保存</button></div></div>`
       : `<div class="nt-body">${linkify(m.body)}</div>`;
-    h += `<div class="nt-msg${cont ? ' cont' : ''}" data-id="${m.id}">${av}
-      ${cont ? '' : `<div class="nt-meta"><b>${esc(m.author_name)}</b><time>${z(d.getMonth() + 1)}/${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}</time>${m.edited_at ? '<span class="ed">（編集済み）</span>' : ''}</div>`}
-      ${N.admin ? '<span class="nt-tools"><button type="button" data-edit>編集</button><button type="button" data-del>削除</button></span>' : ''}
-      ${body}<div class="nt-rs">${rs}<button class="nt-add${rs ? '' : ' only'}" type="button" data-add aria-label="リアクションを付ける">☺︎+</button></div></div>`;
+    h += `<div class="nt-msg${cont ? ' cont' : ''}" data-id="${m.id}">${tools}
+      ${cont ? '' : `<div class="nt-who">${avatar(m.author_name, m.author_color, m.author_avatar)}<b>${esc(m.author_name)}</b><time>${d.getMonth() + 1}/${d.getDate()} ${z(d.getHours())}:${z(d.getMinutes())}</time>${m.edited_at ? '<span class="ed">編集済み</span>' : ''}</div>`}
+      <div class="nt-bub">${body}</div>
+      <div class="nt-rs">${rs}<button class="nt-add${rs ? '' : ' only'}" type="button" data-add aria-label="リアクションを付ける" title="リアクション"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="12" r="8"/><path d="M7.8 13.8c.8 1.3 1.9 2 3.2 2s2.4-.7 3.2-2"/><circle cx="8.4" cy="10" r=".6" fill="currentColor"/><circle cx="13.6" cy="10" r=".6" fill="currentColor"/><path d="M19.5 2.5v5M17 5h5"/></svg></button></div></div>`;
     prev = m;
   }
   box.innerHTML = h;
@@ -208,23 +208,59 @@ async function toggle(id, emoji, on){
   loadFeed(true);
 }
 function closePick(){ q('.nt-pick')?.remove(); }
-function openPick(btn, id){
+// 絵文字の一覧（大きいので、初めて開いた時に読み込む）
+function loadEmoji(){
+  if (window.NT_EMOJI) return Promise.resolve(window.NT_EMOJI);
+  return loadEmoji.p || (loadEmoji.p = new Promise((ok, ng) => {
+    const s = document.createElement('script'); s.src = 'notice-emoji.js';
+    s.onload = () => ok(window.NT_EMOJI); s.onerror = () => { loadEmoji.p = null; ng(new Error('絵文字を読み込めませんでした')); };
+    document.head.appendChild(s);
+  }));
+}
+const getRecent = () => { try { const r = JSON.parse(localStorage.getItem('mydon-nt-recent') || '[]'); return r.length ? r : QUICK; } catch { return QUICK; } };
+const addRecent = e => { const r = [e, ...getRecent().filter(x => x !== e)].slice(0, 16); try { localStorage.setItem('mydon-nt-recent', JSON.stringify(r)); } catch {} };
+let GROUPS = null;   // [[アイコン, 名前, [[絵文字, 名前・タグ], …]], …]
+async function openPick(btn, id){
   closePick();
   const el = document.createElement('div'); el.className = 'nt-pick'; el.dataset.id = id;
-  el.innerHTML = `<div class="q">${QUICK.map(e => `<button type="button" data-q="${e}">${e}</button>`).join('')}</div>
-    <form><input id="ntEmoji" placeholder="好きな絵文字" aria-label="絵文字を入力" autocomplete="off" maxlength="16"><button class="btn primary" type="submit">付ける</button></form>
-    <div class="hint">絵文字キーボードから、好きなものを入れられます</div>`;
+  el.setAttribute('role', 'dialog'); el.setAttribute('aria-label', '絵文字を選ぶ');
+  el.innerHTML = `<div class="pk-top"><input type="search" placeholder="絵文字を探す（例：すし、ハート）" aria-label="絵文字を探す" autocomplete="off"></div>
+    <div class="pk-cats"></div><div class="pk-grid"><p class="pk-none">読み込み中…</p></div>
+    <div class="pk-foot"><span class="e"></span><span class="l">絵文字を選んで下さい</span></div>`;
   document.body.appendChild(el);
-  const r = btn.getBoundingClientRect();
-  el.style.left = Math.max(8, Math.min(r.left, innerWidth - 258)) + 'px';
-  el.style.top = (r.bottom + 6 + el.offsetHeight > innerHeight ? r.top - el.offsetHeight - 6 : r.bottom + 6) + 'px';
-  el.addEventListener('click', e => { const b = e.target.closest('[data-q]'); if (b) { closePick(); toggle(id, b.dataset.q, true); } });
-  el.querySelector('form').addEventListener('submit', e => {
-    e.preventDefault();
-    const v = el.querySelector('input').value.trim();
-    if (!okEmoji(v)) { say('絵文字を1つ入れて下さい'); return; }
-    closePick(); toggle(id, v, true);
+  if (innerWidth > 560) {
+    const r = btn.getBoundingClientRect();
+    el.style.left = Math.max(8, Math.min(r.left, innerWidth - el.offsetWidth - 8)) + 'px';
+    const h = el.offsetHeight;
+    el.style.top = (r.bottom + 6 + h <= innerHeight - 8 ? r.bottom + 6 : r.top - h - 6 >= 8 ? r.top - h - 6 : Math.max(8, innerHeight - h - 8)) + 'px';
+  }
+  const grid = el.querySelector('.pk-grid'), inp = el.querySelector('input'), foot = el.querySelector('.pk-foot');
+  const btns = list => `<div class="pk-g">${list.map(([e, l]) => `<button type="button" data-q="${esc(e)}" data-l="${esc(l.split(' ')[0])}" aria-label="${esc(l.split(' ')[0])}">${esc(e)}</button>`).join('')}</div>`;
+  const pick = e => { addRecent(e); closePick(); toggle(id, e, true); };
+  el.addEventListener('click', e => {
+    const b = e.target.closest('[data-q]'); if (b) { pick(b.dataset.q); return; }
+    const c = e.target.closest('[data-cat]'); if (c) { const h = grid.querySelector(`[data-h="${c.dataset.cat}"]`); if (h) grid.scrollTop = h.offsetTop - 2; }
   });
+  el.addEventListener('pointerover', e => { const b = e.target.closest('[data-q]'); if (b) { foot.querySelector('.e').textContent = b.dataset.q; foot.querySelector('.l').textContent = b.dataset.l || ''; } });
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); const first = grid.querySelector('[data-q]'); if (first) pick(first.dataset.q); } });
+  try {
+    const raw = await loadEmoji();
+    GROUPS = GROUPS || raw.map(([icon, name, s]) => [icon, name, s.split(';').map(x => x.split('|'))]);
+  } catch (ex) { grid.innerHTML = `<p class="pk-none">${esc(ex.message)}</p>`; return; }
+  if (!el.isConnected) return;
+  const recent = getRecent().map(e => [e, GROUPS.flatMap(g => g[2]).find(x => x[0] === e)?.[1] || e]);
+  el.querySelector('.pk-cats').innerHTML = `<button type="button" data-cat="r" title="よく使う" aria-label="よく使う">🕘</button>` + GROUPS.map((g, i) => `<button type="button" data-cat="${i}" title="${esc(g[1])}" aria-label="${esc(g[1])}">${g[0]}</button>`).join('');
+  const all = () => `<h4 data-h="r">よく使う</h4>${btns(recent)}` + GROUPS.map((g, i) => `<h4 data-h="${i}">${esc(g[1])}</h4>${btns(g[2])}`).join('');
+  grid.innerHTML = all();
+  // 探す：名前・タグで。絵文字そのものを入れた時は、それを出す
+  inp.addEventListener('input', () => {
+    const v = inp.value.trim().normalize('NFKC').toLowerCase();
+    if (!v) { grid.innerHTML = all(); return; }
+    const hit = GROUPS.flatMap(g => g[2]).filter(([e, l]) => e === v || l.toLowerCase().includes(v)).slice(0, 200);
+    if (!hit.length && okEmoji(inp.value.trim())) hit.push([inp.value.trim(), 'この絵文字']);
+    grid.innerHTML = hit.length ? btns(hit) : '<p class="pk-none">見つかりません。<br>絵文字キーボードで入れることもできます</p>';
+  });
+  if (innerWidth > 560) inp.focus();
 }
 document.addEventListener('pointerdown', e => { if (q('.nt-pick') && !e.target.closest('.nt-pick') && !e.target.closest('[data-add]')) closePick(); }, true);
 q('#ntList').addEventListener('click', async e => {
@@ -232,7 +268,7 @@ q('#ntList').addEventListener('click', async e => {
   const msg = e.target.closest('.nt-msg'); if (!msg) return;
   const id = msg.dataset.id;
   const r = e.target.closest('.nt-r'); if (r) { toggle(id, r.dataset.e); return; }
-  const add = e.target.closest('[data-add]'); if (add) { if (await needLogin()) openPick(add, id); return; }
+  const add = e.target.closest('[data-add]'); if (add) { if (q('.nt-pick')?.dataset.id === id) { closePick(); return; } if (await needLogin()) openPick(add, id); return; }
   if (e.target.closest('[data-edit]')) { N.editing = Number(id); render(true); q('.nt-edit textarea')?.focus(); return; }
   if (e.target.closest('[data-ecancel]')) { N.editing = null; render(true); return; }
   if (e.target.closest('[data-esave]')) {
