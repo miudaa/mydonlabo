@@ -289,6 +289,15 @@ q('#ntList').addEventListener('click', async e => {
   msg.classList.toggle('sel');
 });
 
+// ---- アイコン画像を押すと大きく見られる ----
+document.addEventListener('click', e => {
+  const i = e.target.closest('#ntPop .nt-av img'); if (!i) return;
+  e.stopPropagation();
+  const z = document.createElement('div'); z.className = 'nt-zoom'; z.innerHTML = `<img src="${esc(i.src)}" alt="">`;
+  z.onclick = () => z.remove(); document.body.appendChild(z);
+}, true);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && q('.nt-zoom')) { e.stopImmediatePropagation(); q('.nt-zoom').remove(); } }, true);
+
 // ---- 管理者：書く ----
 const grow = t => { t.style.height = 'auto'; t.style.height = Math.min(t.scrollHeight, 140) + 'px'; };
 q('#ntText').addEventListener('input', e => grow(e.target));

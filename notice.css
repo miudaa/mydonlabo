@@ -110,3 +110,6 @@
   #ntPop{left:8px!important;right:8px;width:auto}
   .nt-pick{left:0!important;right:0;bottom:0;top:auto!important;width:auto;height:58vh;border-radius:16px 16px 0 0;padding-bottom:env(safe-area-inset-bottom)}
 }
+.nt-av img{cursor:zoom-in}
+.nt-zoom{position:fixed;inset:0;z-index:80;background:rgba(0,0,0,.85);display:grid;place-items:center;cursor:zoom-out}
+.nt-zoom img{width:min(320px,80vw);height:min(320px,80vw);border-radius:50%;object-fit:cover}
